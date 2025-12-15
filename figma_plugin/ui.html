@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>Flutter → Figma</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Noto Sans KR", sans-serif;
+      }
+      body {
+        background: #111;
+        color: #f5f5f5;
+        padding: 12px;
+      }
+      .app-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      .tab-bar {
+        display: flex;
+        margin-bottom: 12px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid #333;
+      }
+      .tab {
+        flex: 1;
+        text-align: center;
+        padding: 6px 0;
+        font-size: 11px;
+        cursor: pointer;
+        background: #181818;
+        color: #aaa;
+      }
+      .tab.active {
+        background: #2f80ff;
+        color: #fff;
+        font-weight: 600;
+      }
+      .label {
+        font-size: 11px;
+        margin-bottom: 4px;
+        color: #ccc;
+      }
+      textarea {
+        width: 100%;
+        height: 260px;
+        font-size: 10px;
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid #333;
+        background: #181818;
+        color: #f5f5f5;
+        resize: none;
+        outline: none;
+      }
+      textarea:focus {
+        border-color: #2f80ff;
+      }
+      .btn-primary {
+        width: 100%;
+        margin-top: 10px;
+        padding: 8px 0;
+        border-radius: 6px;
+        border: none;
+        background: #2f80ff;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .btn-primary:hover {
+        background: #1b63cc;
+      }
+      .btn-secondary {
+        width: 100%;
+        margin-top: 6px;
+        padding: 6px 0;
+        border-radius: 6px;
+        border: 1px solid #444;
+        background: #181818;
+        color: #ccc;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .hint {
+        margin-top: 6px;
+        font-size: 10px;
+        color: #888;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-title">Flutter → Figma 레이아웃 복원</div>
+
+    <div class="tab-bar">
+      <div class="tab active" id="tab-flutter">Flutter JSON</div>
+      <div class="tab" id="tab-code">코드 실행(추후)</div>
+    </div>
+
+    <div>
+      <div class="label">Flutter 레이아웃 JSON 붙여넣기:</div>
+      <textarea
+        id="jsonInput"
+        spellcheck="false"
+        placeholder='{
+  "type": "Frame",
+  "name": "Screen",
+  "rect": { "x": 0, "y": 0, "w": 411.4, "h": 891.4 },
+  "properties": { "backgroundColor": "#fffef8e2" },
+  "children": [ ... ]
+}'
+      ></textarea>
+      <button class="btn-primary" id="renderBtn">
+        렌더링 (Figma에 화면 생성)
+      </button>
+      <button class="btn-secondary" id="closeBtn">닫기</button>
+      <div class="hint">
+        • Flutter Inspector에서 추출한 JSON 전체를 붙여넣고 렌더링을 누르세요.<br />
+        • 여러 화면이 한 JSON에 있으면 자동으로 여러 Frame으로 나눕니다.
+      </div>
+    </div>
+
+    <script>
+      const jsonInput = document.getElementById("jsonInput");
+      const renderBtn = document.getElementById("renderBtn");
+      const closeBtn = document.getElementById("closeBtn");
+
+      renderBtn.onclick = function () {
+        const text = jsonInput.value.trim();
+        if (!text) {
+          alert("JSON을 먼저 입력해 주세요.");
+          return;
+        }
+        parent.postMessage(
+          {
+            pluginMessage: {
+              type: "render-flutter-layout",
+              json: text,
+            },
+          },
+          "*"
+        );
+      };
+
+      closeBtn.onclick = function () {
+        parent.postMessage(
+          {
+            pluginMessage: {
+              type: "close",
+            },
+          },
+          "*"
+        );
+      };
+
+      document.getElementById("tab-code").onclick = function () {
+        alert("코드 실행 탭은 추후 확장 예정입니다 :)");
+      };
+      document.getElementById("tab-flutter").onclick = function () {};
+    </script>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "name": "Flutter Screen Rebuilder",
+  "id": "flutter-screen-rebuilder",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html"
+}

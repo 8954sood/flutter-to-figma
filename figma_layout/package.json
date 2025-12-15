@@ -1,0 +1,46 @@
+{
+  "name": "flutter-widget-tree-inspector",
+  "displayName": "Flutter Widget/Render Tree Inspector",
+  "description": "Fetch Flutter widget tree, layout explorer nodes, and full design dump for reconstruction.",
+  "version": "0.0.5",
+  "publisher": "your-name",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onCommand:flutterInspector.dumpFullDesign",
+    "onCommand:flutterInspector.dumpFigmaLayout"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "flutterInspector.dumpFullDesign",
+        "title": "Flutter Inspector: Dump Full Screen Design (JSON)",
+        "category": "Flutter Inspector"
+      },
+      {
+        "command": "flutterInspector.dumpFigmaLayout",
+        "title": "Flutter Inspector: Dump Figma Layout (Fast RenderTree Crawler)",
+        "category": "Flutter Inspector"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^16.18.11",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.3.3",
+    "ws": "^8.14.2",
+    "vscode-test": "^1.6.1"
+  },
+  "dependencies": {}
+}
