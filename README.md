@@ -1,15 +1,17 @@
-# 모바일(App) 피그마 레이아웃 변환 서비스
+# Flutter Runtime Render-Tree 분석을 통한 Figma 디자인 생성 시스템
 
 ## 🔎 프로젝트 소개
 
-• 이 프로젝트는 모바일 앱의 런타임 렌더 트리를 분석해, 개발 이후의 화면을 편집 가능한 Figma 디자인으로 자동 변환함으로써 초기 스타트업의 개발–디자인 역방향 워크플로우를 자동화하는 시스템을 구현하였습니다.
+• 이 프로젝트는 이미 개발이 끝난 모바일 앱 화면을 분석하여, 해당 화면을 그대로 편집 가능한 Figma 디자인으로 자동 변환하는 시스템입니다.<br>
+• 개발자가 먼저 만든 화면을 다시 디자인으로 옮겨 그릴 필요 없이, 실제 앱 화면을 기준으로 디자인 자산을 즉시 생성할 수 있도록 돕습니다.<br>
 
 ----
 
 ## 🔖 프로젝트 배경
 
 • 최근 노코드(No-Code) 도구와 생성형 AI의 발전으로 1인 개발자가 빠르게 모바일 앱을 구현하는 흐름이 확산되고 있습니다.<br>
-• 하지만 MVP 검증 이후 디자이너가 합류할 경우, 이미 구현된 화면을 Figma로 다시 제작하는 반복 작업이 필연적으로 발생하며 이는 디자인 부채와 협업 비효율을 초래합니다.<br>
+• 하지만 MVP 검증 이후 디자이너가 합류하면, 이미 개발된 앱 화면을 다시 Figma로 옮겨 그리는 작업이 필요해집니다.<br>
+• 이 과정은 많은 시간과 비용이 들고, 개발자와 디자이너 간 협업을 어렵게 만드는 원인이 됩니다.<br>
 
 ----
 
@@ -47,5 +49,5 @@ https://github.com/user-attachments/assets/6e3080ea-f02d-47f1-8125-3b59d8062472
 ## 💬 참여자
 |[Jonghyun Oh](https://github.com/Sjaize)|[Jaewoo Park](https://github.com/park1210)|[Junhyeok Heo](https://github.com/scythe0425)|
 |:-:|:-:|:-:|
-
+|<img src='https://avatars.githubusercontent.com/u/194899453?v=4' height=120 width=120></img>|<img src='https://avatars.githubusercontent.com/u/121178764?v=4' height=120 width=120></img>|<img src='https://avatars.githubusercontent.com/u/84613925?v=4' height=120 width=120></img>
 
