@@ -1,71 +1,42 @@
-# flutter-widget-tree-inspector README
+# 모바일(App) 피그마 레이아웃 변환 서비스
 
-This is the README for your extension "flutter-widget-tree-inspector". After writing up a brief description, we recommend including the following sections.
+## 🔎 프로젝트 소개
 
-## Features
+- 모바일(App) 환경에서는 플랫폼별 렌더링 방식 차이와 코드 구조의 복잡성, 접근성 제약으로 인해 웹의 html.to.design과 같은 개발 결과물의 Figma 전환 도구가 사실상 부재합니다<br>
+- 이로 인해 디자이너 없이 개발자 주도로 구현된 앱은, 이후 디자이너가 투입될 경우 기존 코드와 단절된 디자인 시스템을 다시 구축해야 하는 비효율이 발생합니다.<br>
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
 
-For example if there is an image subfolder under your extension project workspace:
+<b>결론적으로, 이미 구현된 모바일 앱의 프론트엔드 UI를 편집 가능한 Figma 레이아웃으로 자동 변환하는 서비스가 필요합니다.</b><br><br>
 
-\!\[feature X\]\(images/feature-x.png\)
+----
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+## ⚙️ 서비스 구조
+<img width="1536" height="1024" alt="service_structure" src="https://github.com/user-attachments/assets/f343bc02-b100-4c11-b268-b106d5d1b0bd" />
 
-## Requirements
+----
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+## 🚀 핵심 기능 소개
+### 1️⃣ flutter tree 추출<br>
+• 실행 중인 Flutter 앱의 Widget / RenderObject 트리를 Inspector를 통해 실시간으로 수집<br>
+• 단순 위젯 선언이 아닌, 실제 렌더링 결과 기반의 구조·속성 정보를 JSON 형태로 추출<br>
 
-## Extension Settings
+### 2️⃣ 추출한 tree 가공<br>
+• Flutter 전용 트리를 플랫폼 독립적인 Intermediate Representation(IR)로 정규화<br>
+• 레이아웃, 스타일, 계층 구조를 분석하여 디자인 요소 단위로 재구성<br>
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+### 3️⃣ figma plugin으로 디자인 복원<br>
+• 가공된 IR을 기반으로 Figma Node(Frame, Text, Vector, Image) 자동 생성<br>
+• Auto Layout, Constraint, Component 구조를 유지하여 편집 가능한 디자인으로 변환<br>
+<img width="1088" height="1096" alt="figma plugin으로 디자인 복원" src="https://github.com/user-attachments/assets/df4ff6b8-8e17-42cb-a28b-058545d799f8" />
 
-For example:
+----
 
-This extension contributes the following settings:
+## ✔️ 데모 영상
+https://github.com/user-attachments/assets/d1cac362-96fb-4a9c-b9d9-1eac96988345
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+----
 
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+## ✔️ 결론
+• 모바일 앱의 UI 트리를 추출·가공하여 편집 가능한 Figma 레이아웃으로 자동 변환하는 시스템을 구현하였습니다.<br>
+• 개발 결과물을 디자인 자산으로 재활용할 수 있어 디자인 재작업 비용과 협업 단절 문제를 완화할 수 있습니다.<br>
+• 향후에는 Flutter뿐 아니라 React Native 등 다양한 모바일 프레임워크로 확장하여 범용성을 높이고, 현재 복원되지 않는 벡터 그래픽(SVG, CustomPaint) 및 대형 이미지 요소에 대한 분석·복원 기능을 추가할 계획입니다. 또한 컴포넌트 자동 추출과 디자인 시스템 연계를 통해 재사용 가능한 디자인 구조 생성을 고도화하고, 다중 화면 및 상태 기반 UI 분석을 포함한 실무 수준의 모바일 코드-투-디자인 파이프라인으로 발전시키고자 합니다.
