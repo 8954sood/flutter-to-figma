@@ -11,7 +11,7 @@
 ----
 
 ## ⚙️ 서비스 구조
-<img width="1536" height="1024" alt="service_structure" src="https://github.com/user-attachments/assets/f343bc02-b100-4c11-b268-b106d5d1b0bd" />
+
 
 ----
 
