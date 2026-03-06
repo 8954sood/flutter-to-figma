@@ -2,7 +2,7 @@
   "name": "flutter-widget-tree-inspector",
   "displayName": "Flutter Widget/Render Tree Inspector",
   "description": "Fetch Flutter widget tree, layout explorer nodes, and full design dump for reconstruction.",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "your-name",
   "engines": {
     "vscode": "^1.85.0"

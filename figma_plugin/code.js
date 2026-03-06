@@ -78,7 +78,7 @@ async function renderWholeLayout(root) {
     h: frameH,
   };
 
-  renderNodeTree(screen, screenFrame, rootRect);
+  renderNodeTree(screen, screenFrame, rootRect, {});
 
   figma.currentPage.selection = [screenFrame];
   figma.viewport.scrollAndZoomIntoView([screenFrame]);
@@ -147,11 +147,18 @@ async function preloadFonts(rootNode) {
 // ----------------------------
 // 트리 렌더링 (부모 rect 기준 상대좌표, 동기 버전)
 // ----------------------------
-function renderNodeTree(node, parentFigma, parentRect) {
+function renderNodeTree(node, parentFigma, parentRect, parentNodeProps) {
   if (!node || typeof node !== "object") return;
 
   var rect = node.rect || {};
   var props = node.properties || {};
+  var pProps = parentNodeProps || {};
+
+  // 부모가 Auto Layout인지 확인
+  var parentIsAutoLayout =
+    pProps.layoutMode === "HORIZONTAL" || pProps.layoutMode === "VERTICAL" ||
+    pProps.paddingTop != null || pProps.paddingRight != null ||
+    pProps.paddingBottom != null || pProps.paddingLeft != null;
 
   var parentX =
     parentRect && typeof parentRect.x === "number" ? parentRect.x : 0;
@@ -196,8 +203,23 @@ function renderNodeTree(node, parentFigma, parentRect) {
   }
 
   if (figNode) {
-    figNode.x = localX;
-    figNode.y = localY;
+    // Auto Layout 부모일 때: 절대좌표 건너뛰기 + flex 속성 적용
+    if (parentIsAutoLayout) {
+      // flexGrow: Expanded/Flexible 자식
+      if (typeof props.flexGrow === "number" && props.flexGrow > 0) {
+        figNode.layoutGrow = 1;
+      }
+      // 부모가 crossAxisAlignment.stretch이면
+      var parentCross = mapCrossAxisAlign(pProps.crossAxisAlignment);
+      if (parentCross === "STRETCH") {
+        figNode.layoutAlign = "STRETCH";
+      }
+      // Auto Layout 자식은 x/y를 설정하지 않음 (Figma가 자동 배치)
+    } else {
+      figNode.x = localX;
+      figNode.y = localY;
+    }
+
     figNode.name = node.name || node.description || node.type || "Node";
     parentFigma.appendChild(figNode);
   }
@@ -207,15 +229,69 @@ function renderNodeTree(node, parentFigma, parentRect) {
   var nextParentRect = rect;
 
   for (var i = 0; i < children.length; i++) {
-    renderNodeTree(children[i], container, nextParentRect);
+    renderNodeTree(children[i], container, nextParentRect, props);
   }
+}
+
+// ----------------------------
+// Flutter Alignment → Figma 정렬 매핑
+// ----------------------------
+function mapMainAxisAlign(val) {
+  var key = String(val || "").split(".").pop();
+  if (key === "center") return "CENTER";
+  if (key === "end") return "MAX";
+  if (key === "spaceBetween") return "SPACE_BETWEEN";
+  return "MIN"; // start, default
+}
+
+function mapCrossAxisAlign(val) {
+  var key = String(val || "").split(".").pop();
+  if (key === "center") return "CENTER";
+  if (key === "end") return "MAX";
+  if (key === "stretch") return "STRETCH";
+  return "MIN"; // start, default
 }
 
 // ----------------------------
 // Frame 스타일 적용
 // ----------------------------
 function applyFrameProps(frame, props) {
-  frame.layoutMode = "NONE";
+  // --- Auto Layout 적용 ---
+  if (props.layoutMode === "HORIZONTAL" || props.layoutMode === "VERTICAL") {
+    frame.layoutMode = props.layoutMode;
+    frame.itemSpacing = typeof props.itemSpacing === "number" ? props.itemSpacing : 0;
+
+    // Padding
+    frame.paddingTop = typeof props.paddingTop === "number" ? props.paddingTop : 0;
+    frame.paddingRight = typeof props.paddingRight === "number" ? props.paddingRight : 0;
+    frame.paddingBottom = typeof props.paddingBottom === "number" ? props.paddingBottom : 0;
+    frame.paddingLeft = typeof props.paddingLeft === "number" ? props.paddingLeft : 0;
+
+    // Primary axis sizing (mainAxisSize: min → HUG, max → FIXED)
+    frame.primaryAxisSizingMode = props.mainAxisSize === "AUTO" ? "AUTO" : "FIXED";
+    // Counter axis sizing
+    var crossAlign = mapCrossAxisAlign(props.crossAxisAlignment);
+    frame.counterAxisSizingMode = crossAlign === "STRETCH" ? "FIXED" : "AUTO";
+
+    // Alignment
+    frame.primaryAxisAlignItems = mapMainAxisAlign(props.mainAxisAlignment);
+    frame.counterAxisAlignItems = crossAlign === "STRETCH" ? "MIN" : crossAlign;
+  } else if (
+    props.paddingTop != null || props.paddingRight != null ||
+    props.paddingBottom != null || props.paddingLeft != null
+  ) {
+    // 단독 Padding → Auto Layout VERTICAL + padding + HUG sizing
+    frame.layoutMode = "VERTICAL";
+    frame.primaryAxisSizingMode = "AUTO";
+    frame.counterAxisSizingMode = "AUTO";
+    frame.itemSpacing = 0;
+    frame.paddingTop = typeof props.paddingTop === "number" ? props.paddingTop : 0;
+    frame.paddingRight = typeof props.paddingRight === "number" ? props.paddingRight : 0;
+    frame.paddingBottom = typeof props.paddingBottom === "number" ? props.paddingBottom : 0;
+    frame.paddingLeft = typeof props.paddingLeft === "number" ? props.paddingLeft : 0;
+  } else {
+    frame.layoutMode = "NONE";
+  }
 
   // 1) 배경 이미지가 있으면 최우선으로 사용
   if (props.backgroundImageBase64) {
