@@ -291,16 +291,43 @@ Future<void> main(List<String> args) async {
 
     await Future.delayed(const Duration(milliseconds: 1500));
 
-    // ---- evaluate ----
-    _log('[Evaluate] figmaExtractorEntryPoint() 호출...');
+    // ---- evaluate (이미지 포함 async export 시도) ----
+    _log('[Evaluate] figmaStartExportWithImages() 호출...');
     dynamic result;
     if (crawlerLib != null) {
       try {
-        result = await rpcCall(ws, 'evaluate', {
+        // Phase 1: async export 시작
+        await rpcCall(ws, 'evaluate', {
           'isolateId': isolateId,
           'targetId': crawlerLib['id'],
-          'expression': 'figmaExtractorEntryPoint()',
+          'expression': 'figmaStartExportWithImages()',
         });
+
+        // Phase 2: 결과 폴링 (최대 30초)
+        for (int i = 0; i < 60; i++) {
+          await Future.delayed(const Duration(milliseconds: 500));
+          final pollResult = await rpcCall(ws, 'evaluate', {
+            'isolateId': isolateId,
+            'targetId': crawlerLib['id'],
+            'expression': 'figmaGetExportResult()',
+          }) as Map<String, dynamic>;
+          if (pollResult['valueAsString'] != null &&
+              pollResult['valueAsString'] != 'null') {
+            result = pollResult;
+            _log('[Evaluate] async export 완료 (${i * 500}ms)');
+            break;
+          }
+        }
+
+        // 폴링 타임아웃 시 sync fallback
+        if (result == null) {
+          _log('[Evaluate] async export 타임아웃 → sync fallback');
+          result = await rpcCall(ws, 'evaluate', {
+            'isolateId': isolateId,
+            'targetId': crawlerLib['id'],
+            'expression': 'figmaExtractorEntryPoint()',
+          });
+        }
       } catch (_) {
         _log('[Evaluate] 라이브러리 컨텍스트 실패 → 전역 컨텍스트 재시도');
         result = await rpcCall(ws, 'evaluate', {

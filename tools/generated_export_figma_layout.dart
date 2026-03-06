@@ -62,6 +62,82 @@ class DesignInfo {
 
 final Map<RenderObject, DesignInfo> _designInfoByRenderObject = {};
 final Set<RenderObject> _svgBoxTargets = {};
+final Map<RenderObject, String> _imageDataByNode = {};
+String? _asyncExportResult;
+bool _asyncExportBusy = false;
+
+/// =======================================================
+/// 0.5 Pre-capture: 이미지/아이콘 → base64 (async)
+/// =======================================================
+
+Future<void> _preCaptureImages(RenderObject node) async {
+  // RenderImage → 축소 후 PNG 인코딩 (최대 512px)
+  if (node is RenderImage) {
+    try {
+      final ui.Image? img = node.image;
+      if (img != null) {
+        final maxDim = 512;
+        int targetW = img.width;
+        int targetH = img.height;
+        if (targetW > maxDim || targetH > maxDim) {
+          final scale = maxDim / (targetW > targetH ? targetW : targetH);
+          targetW = (targetW * scale).ceil();
+          targetH = (targetH * scale).ceil();
+        }
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder);
+        canvas.drawImageRect(
+          img,
+          Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+          Rect.fromLTWH(0, 0, targetW.toDouble(), targetH.toDouble()),
+          Paint(),
+        );
+        final picture = recorder.endRecording();
+        final resized = await picture.toImage(targetW, targetH);
+        final byteData = await resized.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData != null) {
+          _imageDataByNode[node] = base64Encode(byteData.buffer.asUint8List());
+        }
+      }
+    } catch (_) {}
+  }
+
+  // MaterialIcons → TextPainter → PictureRecorder → toImage()
+  if (node is RenderParagraph) {
+    try {
+      final span = node.text;
+      if (span is TextSpan && span.style?.fontFamily?.contains('MaterialIcons') == true) {
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(
+          recorder,
+          Rect.fromLTWH(0, 0, node.size.width, node.size.height),
+        );
+        final painter = TextPainter(
+          text: span,
+          textDirection: TextDirection.ltr,
+        );
+        painter.layout();
+        painter.paint(canvas, Offset.zero);
+        final picture = recorder.endRecording();
+        final img = await picture.toImage(
+          node.size.width.ceil(),
+          node.size.height.ceil(),
+        );
+        final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData != null) {
+          _imageDataByNode[node] = base64Encode(byteData.buffer.asUint8List());
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 자식 재귀 (visitChildren은 sync callback → 리스트 수집 후 순회)
+  final children = <RenderObject>[];
+  node.visitChildren((child) => children.add(child));
+  for (final child in children) {
+    await _preCaptureImages(child);
+  }
+}
 
 /// =======================================================
 /// 1. Element 트리 순회해서 위젯 레벨 디자인 정보 수집
@@ -291,6 +367,11 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       final Color color = style?.color ?? const Color(0xFF000000);
       visual['backgroundColor'] = _colorToHex(color);
       visual['isIconBox'] = true;
+      // pre-captured 아이콘 이미지 lookup
+      final b64 = _imageDataByNode[node];
+      if (b64 != null) {
+        visual['iconImageBase64'] = b64;
+      }
     } else {
       type = 'Text';
       hasVisual = true;
@@ -316,6 +397,11 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     try {
       visual['imagePath'] = node.debugImageLabel;
       visual['imageFit'] = 'cover';
+      // pre-captured 이미지 데이터 lookup
+      final b64 = _imageDataByNode[node];
+      if (b64 != null) {
+        visual['imageBase64'] = b64;
+      }
     } catch (_) {}
   }
   // ---------------------------------------------------
@@ -380,12 +466,13 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     }
 
     // 기타: Frame(COLUMN) + padding
+    // RenderPadding은 tight constraints를 자식에게 전달 → stretch가 올바른 매핑
     type = 'Frame';
     layoutMode = 'COLUMN';
     isLayoutNode = true;
     containerLayout['padding'] = paddingMap;
     containerLayout['mainAxisAlignment'] = 'start';
-    containerLayout['crossAxisAlignment'] = 'start';
+    containerLayout['crossAxisAlignment'] = 'stretch';
     containerLayout['mainAxisSize'] = 'min';
     containerLayout['itemSpacing'] = 0.0;
   }
@@ -967,6 +1054,35 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     return null;
   }
 
+  // ---------------------------------------------------
+  // Visual Merge + Flatten: NONE 래퍼(DecoratedBox 등)의 visual을
+  // 자식 Frame에 병합하여 auto-layout 체인 유지
+  // ---------------------------------------------------
+  if (type == 'Frame' &&
+      layoutMode == 'NONE' &&
+      !isLayoutNode &&
+      children.length == 1 &&
+      children.first['type'] == 'Frame') {
+    final child = children.first;
+    final childVisual = child['visual'] as Map<String, dynamic>;
+
+    // outer visual → child에 병합 (child 기존 값 우선)
+    visual.forEach((key, value) {
+      if (value != null && !childVisual.containsKey(key)) {
+        childVisual[key] = value;
+      }
+    });
+
+    // outer rect 유지 (바운딩 박스)
+    child['rect'] = {
+      'x': offset.dx,
+      'y': offset.dy,
+      'w': node.size.width,
+      'h': node.size.height,
+    };
+    return child;
+  }
+
   // Debug: layoutMode가 NONE인 노드 상세 로깅
   if (layoutMode == 'NONE') {
     print('[CRAWL-DEBUG] layoutMode=NONE with ${children.length} children');
@@ -1116,6 +1232,44 @@ String figmaExtractorEntryPoint() {
     debugPrint('[FigmaCrawler] FATAL ERROR: $e\n$st');
     return jsonEncode({'error': e.toString(), 'stackTrace': st.toString()});
   }
+}
+
+/// =======================================================
+/// 6. Async export (이미지 pre-capture 포함)
+/// =======================================================
+
+Future<String> _figmaExportWithImagesAsync() async {
+  _imageDataByNode.clear();
+
+  final root = RendererBinding.instance.renderView;
+
+  // Phase 1: async pre-capture
+  await _preCaptureImages(root);
+
+  // Phase 2: 기존 sync 크롤 (figmaExtractorEntryPoint 재사용)
+  final result = figmaExtractorEntryPoint();
+
+  _imageDataByNode.clear(); // 메모리 해제
+  return result;
+}
+
+/// CLI에서 호출: evaluate('figmaStartExportWithImages()')
+void figmaStartExportWithImages() {
+  _asyncExportBusy = true;
+  _asyncExportResult = null;
+  _figmaExportWithImagesAsync().then((r) {
+    _asyncExportResult = r;
+    _asyncExportBusy = false;
+  }).catchError((e) {
+    _asyncExportResult = '{"error":"$e"}';
+    _asyncExportBusy = false;
+  });
+}
+
+/// CLI에서 폴링: evaluate('figmaGetExportResult()')
+String? figmaGetExportResult() {
+  if (_asyncExportBusy) return null;
+  return _asyncExportResult;
 }
 """;
 
@@ -1386,16 +1540,43 @@ Future<void> main(List<String> args) async {
 
     await Future.delayed(const Duration(milliseconds: 1500));
 
-    // ---- evaluate ----
-    _log('[Evaluate] figmaExtractorEntryPoint() 호출...');
+    // ---- evaluate (이미지 포함 async export 시도) ----
+    _log('[Evaluate] figmaStartExportWithImages() 호출...');
     dynamic result;
     if (crawlerLib != null) {
       try {
-        result = await rpcCall(ws, 'evaluate', {
+        // Phase 1: async export 시작
+        await rpcCall(ws, 'evaluate', {
           'isolateId': isolateId,
           'targetId': crawlerLib['id'],
-          'expression': 'figmaExtractorEntryPoint()',
+          'expression': 'figmaStartExportWithImages()',
         });
+
+        // Phase 2: 결과 폴링 (최대 30초)
+        for (int i = 0; i < 60; i++) {
+          await Future.delayed(const Duration(milliseconds: 500));
+          final pollResult = await rpcCall(ws, 'evaluate', {
+            'isolateId': isolateId,
+            'targetId': crawlerLib['id'],
+            'expression': 'figmaGetExportResult()',
+          }) as Map<String, dynamic>;
+          if (pollResult['valueAsString'] != null &&
+              pollResult['valueAsString'] != 'null') {
+            result = pollResult;
+            _log('[Evaluate] async export 완료 (${i * 500}ms)');
+            break;
+          }
+        }
+
+        // 폴링 타임아웃 시 sync fallback
+        if (result == null) {
+          _log('[Evaluate] async export 타임아웃 → sync fallback');
+          result = await rpcCall(ws, 'evaluate', {
+            'isolateId': isolateId,
+            'targetId': crawlerLib['id'],
+            'expression': 'figmaExtractorEntryPoint()',
+          });
+        }
       } catch (_) {
         _log('[Evaluate] 라이브러리 컨텍스트 실패 → 전역 컨텍스트 재시도');
         result = await rpcCall(ws, 'evaluate', {

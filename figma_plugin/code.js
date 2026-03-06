@@ -210,6 +210,7 @@ function mergeWrapperChains(node) {
   if (node.type !== "Frame") return node;
 
   // 체인 수집: Frame + children.length===1 + child.type===Frame
+  // visual 속성이 있는 노드에서 중단 (시각적 경계 보존)
   var chain = [node];
   var current = node;
   while (
@@ -218,7 +219,11 @@ function mergeWrapperChains(node) {
     current.children.length === 1 &&
     current.children[0].type === "Frame"
   ) {
-    current = current.children[0];
+    var next = current.children[0];
+    var np = next.properties || {};
+    if (np.backgroundColor || np.hasBorder || np.borderRadius ||
+        np.elevation || np.isIconBox || np.isSvgBox) break;
+    current = next;
     chain.push(current);
   }
 
@@ -771,7 +776,22 @@ function renderNode(node, parentFigma, parentLayoutDir) {
       if (props.isIconBox) {
         figNode = figma.createFrame();
         figNode.resize(rw, rh);
-        applyVisualProps(figNode, props);
+        if (props.iconImageBase64) {
+          // 실제 아이콘 이미지로 채우기
+          try {
+            var bytes = base64ToUint8Array(props.iconImageBase64);
+            var image = figma.createImage(bytes);
+            figNode.fills = [{
+              type: "IMAGE",
+              imageHash: image.hash,
+              scaleMode: "FIT",
+            }];
+          } catch (e) {
+            applyVisualProps(figNode, props);
+          }
+        } else {
+          applyVisualProps(figNode, props);
+        }
         figNode.layoutMode = "NONE";
       } else if (props.isVectorCandidate) {
         figNode = figma.createFrame();
