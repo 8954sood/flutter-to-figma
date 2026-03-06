@@ -166,6 +166,26 @@ bool _hasVisualProps(Map<String, dynamic> visual) {
 /// 3. Render 트리 크롤러 (Schema v2)
 /// =======================================================
 
+/// SliverPadding에서 패딩을 추출하여 containerLayout에 저장
+void _extractSliverPadding(RenderObject sliver, Map<String, dynamic> cl) {
+  if (sliver is RenderSliverPadding) {
+    final EdgeInsets? resolved = sliver.resolvedPadding;
+    if (resolved != null && !cl.containsKey('padding')) {
+      cl['padding'] = {
+        'top': resolved.top,
+        'right': resolved.right,
+        'bottom': resolved.bottom,
+        'left': resolved.left,
+      };
+    }
+  }
+  sliver.visitChildren((child) {
+    if (child is! RenderBox) {
+      _extractSliverPadding(child, cl);
+    }
+  });
+}
+
 List<Map<String, dynamic>> _crawlThroughSliver(RenderObject sliver) {
   final List<Map<String, dynamic>> results = [];
   sliver.visitChildren((child) {
@@ -217,6 +237,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   bool hasVisual = false;
   bool isLayoutNode = false;
   bool isSizedBox = false;
+  bool isCustomMultiChild = false;
 
   final String runtimeTypeStr = node.runtimeType.toString();
   final bool isSvgBoxTarget = _svgBoxTargets.contains(node);
@@ -232,7 +253,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     visual['backgroundColor'] = '#ffdddddd';
     visual['isSvgBox'] = true;
   }
-
   // ---------------------------------------------------
   // [1] Text / Icon
   // ---------------------------------------------------
@@ -266,7 +286,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       } catch (_) {}
     }
   }
-
   // ---------------------------------------------------
   // [2] Image
   // ---------------------------------------------------
@@ -278,7 +297,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       visual['imageFit'] = 'cover';
     } catch (_) {}
   }
-
   // ---------------------------------------------------
   // [2.5] Padding (RenderPadding) — 자식에 병합
   // ---------------------------------------------------
@@ -313,8 +331,10 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         cl['padding'] = paddingMap;
         flexResult['containerLayout'] = cl;
         flexResult['rect'] = {
-          'x': offset.dx, 'y': offset.dy,
-          'w': node.size.width, 'h': node.size.height,
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
         };
         return flexResult;
       }
@@ -324,12 +344,15 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     if (childCount == 1 && singleChild is RenderStack) {
       final stackResult = _crawl(singleChild);
       if (stackResult != null) {
-        final cl = stackResult['containerLayout'] as Map<String, dynamic>? ?? {};
+        final cl =
+            stackResult['containerLayout'] as Map<String, dynamic>? ?? {};
         cl['padding'] = paddingMap;
         stackResult['containerLayout'] = cl;
         stackResult['rect'] = {
-          'x': offset.dx, 'y': offset.dy,
-          'w': node.size.width, 'h': node.size.height,
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
         };
         return stackResult;
       }
@@ -345,7 +368,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     containerLayout['mainAxisSize'] = 'min';
     containerLayout['itemSpacing'] = 0.0;
   }
-
   // ---------------------------------------------------
   // [3] RenderStack (신규)
   // ---------------------------------------------------
@@ -354,7 +376,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     layoutMode = 'STACK';
     isLayoutNode = true;
   }
-
   // ---------------------------------------------------
   // [4] RenderConstrainedBox (SizedBox)
   // ---------------------------------------------------
@@ -374,8 +395,10 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       if (childResult != null) {
         // rect를 SizedBox 기준으로 업데이트
         childResult['rect'] = {
-          'x': offset.dx, 'y': offset.dy,
-          'w': node.size.width, 'h': node.size.height,
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
         };
         return childResult;
       }
@@ -385,7 +408,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     type = 'Frame';
     layoutMode = 'NONE';
   }
-
   // ---------------------------------------------------
   // [5] Flex (Row / Column)
   // ---------------------------------------------------
@@ -402,7 +424,20 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     containerLayout['crossAxisAlignment'] = crossAlign;
     containerLayout['mainAxisSize'] = mainSize;
   }
-
+  // ---------------------------------------------------
+  // [5.5] RenderWrap
+  // ---------------------------------------------------
+  else if (node is RenderWrap) {
+    type = 'Frame';
+    isLayoutNode = true;
+    layoutMode = 'WRAP';
+    containerLayout['itemSpacing'] = node.spacing;
+    containerLayout['runSpacing'] = node.runSpacing;
+    containerLayout['mainAxisAlignment'] =
+        node.alignment.toString().split('.').last;
+    containerLayout['crossAxisAlignment'] =
+        node.crossAxisAlignment.toString().split('.').last;
+  }
   // ---------------------------------------------------
   // [6] DecoratedBox
   // ---------------------------------------------------
@@ -427,10 +462,18 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         if (decoration.border != null) {
           final border = decoration.border;
           if (border is Border) {
-            final sides = [border.top, border.right, border.bottom, border.left];
+            final sides = [
+              border.top,
+              border.right,
+              border.bottom,
+              border.left,
+            ];
             BorderSide? bestSide;
             for (final side in sides) {
-              if (side.width > 0) { bestSide = side; break; }
+              if (side.width > 0) {
+                bestSide = side;
+                break;
+              }
             }
             if (bestSide != null) {
               visual['border'] = {
@@ -453,7 +496,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       }
     } catch (_) {}
   }
-
   // ---------------------------------------------------
   // [7] PhysicalModel
   // ---------------------------------------------------
@@ -472,7 +514,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       }
     } catch (_) {}
   }
-
   // ---------------------------------------------------
   // [8] PhysicalShape
   // ---------------------------------------------------
@@ -502,7 +543,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       }
     } catch (_) {}
   }
-
   // ---------------------------------------------------
   // [9] Picture / CustomPaint
   // ---------------------------------------------------
@@ -510,6 +550,49 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       runtimeTypeStr.contains('CustomPaint')) {
     type = 'Frame';
     hasVisual = false;
+  }
+  // ---------------------------------------------------
+  // [9.5] CustomMultiChildLayout (NavigationToolbar, Scaffold 등)
+  // ---------------------------------------------------
+  else if (runtimeTypeStr.contains('CustomMultiChildLayoutBox')) {
+    type = 'Frame';
+    isLayoutNode = true;
+    isCustomMultiChild = true;
+
+    // 자식 좌표를 보고 방향 추론
+    double minX = double.infinity, maxX = -double.infinity;
+    double minY = double.infinity, maxY = -double.infinity;
+    int peekCount = 0;
+    node.visitChildren((child) {
+      if (child is RenderBox && child.hasSize) {
+        try {
+          final o = child.localToGlobal(Offset.zero);
+          if (o.dx < minX) minX = o.dx;
+          if (o.dx > maxX) maxX = o.dx;
+          if (o.dy < minY) minY = o.dy;
+          if (o.dy > maxY) maxY = o.dy;
+          peekCount++;
+        } catch (_) {}
+      }
+    });
+
+    if (peekCount >= 2) {
+      final xRange = maxX - minX;
+      final yRange = maxY - minY;
+      layoutMode = xRange > yRange ? 'ROW' : 'COLUMN';
+    } else {
+      layoutMode = 'ROW';
+    }
+
+    if (layoutMode == 'ROW') {
+      containerLayout['mainAxisAlignment'] = 'spaceBetween';
+      containerLayout['crossAxisAlignment'] = 'center';
+      containerLayout['mainAxisSize'] = 'max';
+    } else {
+      containerLayout['mainAxisAlignment'] = 'start';
+      containerLayout['crossAxisAlignment'] = 'stretch';
+      containerLayout['mainAxisSize'] = 'max';
+    }
   }
 
   // ---------------------------------------------------
@@ -636,10 +719,35 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           children.add(c);
         }
       } else {
+        // SliverPadding 감지 → padding + layout 설정
+        _extractSliverPadding(child, containerLayout);
+        if (containerLayout.containsKey('padding') && layoutMode == 'NONE') {
+          layoutMode = 'COLUMN';
+          isLayoutNode = true;
+          containerLayout['crossAxisAlignment'] = 'stretch';
+          containerLayout['mainAxisAlignment'] = 'start';
+        }
         children.addAll(_crawlThroughSliver(child));
       }
     });
   } catch (_) {}
+
+  // CustomMultiChildLayout: 자식을 위치 기준으로 정렬
+  if (isCustomMultiChild && children.length >= 2) {
+    if (layoutMode == 'COLUMN') {
+      children.sort((a, b) {
+        final ay = (a['rect'] as Map<String, dynamic>?)?['y'] as double? ?? 0.0;
+        final by = (b['rect'] as Map<String, dynamic>?)?['y'] as double? ?? 0.0;
+        return ay.compareTo(by);
+      });
+    } else {
+      children.sort((a, b) {
+        final ax = (a['rect'] as Map<String, dynamic>?)?['x'] as double? ?? 0.0;
+        final bx = (b['rect'] as Map<String, dynamic>?)?['x'] as double? ?? 0.0;
+        return ax.compareTo(bx);
+      });
+    }
+  }
 
   // Flex: itemSpacing 계산 (개별 gap 측정 → 가장 빈번한 값 사용)
   if (isFlex && _childMainAxisPositions.length >= 2) {
@@ -670,7 +778,10 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         double bestGap = _gaps.first;
         int bestCount = 0;
         freq.forEach((g, count) {
-          if (count > bestCount) { bestGap = g; bestCount = count; }
+          if (count > bestCount) {
+            bestGap = g;
+            bestCount = count;
+          }
         });
         containerLayout['itemSpacing'] = bestGap;
       }
@@ -682,7 +793,12 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     final bgChild = <String, dynamic>{
       'type': 'Image',
       'layoutMode': 'NONE',
-      'rect': {'x': offset.dx, 'y': offset.dy, 'w': node.size.width, 'h': node.size.height},
+      'rect': {
+        'x': offset.dx,
+        'y': offset.dy,
+        'w': node.size.width,
+        'h': node.size.height,
+      },
       'visual': <String, dynamic>{
         'imagePath': backgroundImagePath,
         'imageFit': backgroundImageFit ?? 'cover',
@@ -697,16 +813,46 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   // ---------------------------------------------------
   final bool hasPadding = containerLayout.containsKey('padding');
   if (type == 'Frame' &&
-      !hasVisual && !_hasVisualProps(visual) &&
-      !isLayoutNode && !isSizedBox &&
+      !hasVisual &&
+      !_hasVisualProps(visual) &&
+      !isLayoutNode &&
+      !isSizedBox &&
       layoutMode == 'NONE' &&
       !hasPadding &&
       children.length == 1) {
     return children.first;
   }
-  if (children.isEmpty && !hasVisual && !_hasVisualProps(visual) &&
+  if (children.isEmpty &&
+      !hasVisual &&
+      !_hasVisualProps(visual) &&
       (node.size.width < 1 && node.size.height < 1)) {
     return null;
+  }
+
+  // Debug: layoutMode가 NONE인 노드 상세 로깅
+  if (layoutMode == 'NONE') {
+    print('[CRAWL-DEBUG] layoutMode=NONE with ${children.length} children');
+    print('  runtimeType: ${node.runtimeType}');
+    print('  runtimeTypeStr: $runtimeTypeStr');
+    print('  size: ${node.size}');
+    print('  hasVisual: $hasVisual');
+    print('  isLayoutNode: $isLayoutNode');
+    print('  isSizedBox: $isSizedBox');
+    print('  visual keys: ${visual.keys.toList()}');
+    print('  containerLayout: $containerLayout');
+    try {
+      final parent = node.parent;
+      if (parent != null) {
+        print('  parent runtimeType: ${parent.runtimeType}');
+      }
+    } catch (_) {}
+    for (int i = 0; i < children.length; i++) {
+      final c = children[i];
+      print(
+        '  child[$i]: type=${c['type']}, layoutMode=${c['layoutMode']}, '
+        'rect=${c['rect']}',
+      );
+    }
   }
 
   // ---------------------------------------------------
@@ -715,7 +861,12 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   final result = <String, dynamic>{
     'type': type,
     'layoutMode': layoutMode,
-    'rect': {'x': offset.dx, 'y': offset.dy, 'w': node.size.width, 'h': node.size.height},
+    'rect': {
+      'x': offset.dx,
+      'y': offset.dy,
+      'w': node.size.width,
+      'h': node.size.height,
+    },
     'visual': visual,
     'children': children,
   };
@@ -729,7 +880,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
 /// =======================================================
 
 List<Map<String, dynamic>> _filterOverlappingScreens(
-    List<Map<String, dynamic>> items, ui.Size screenSize) {
+  List<Map<String, dynamic>> items,
+  ui.Size screenSize,
+) {
   if (items.isEmpty) return items;
   List<int> fullScreenIndices = [];
   for (int i = 0; i < items.length; i++) {
@@ -782,20 +935,31 @@ String figmaExtractorEntryPoint() {
 
     double maxWidth = 0.0;
     double maxHeight = 0.0;
-    try { maxWidth = root.size.width; maxHeight = root.size.height; } catch (_) {}
+    try {
+      maxWidth = root.size.width;
+      maxHeight = root.size.height;
+    } catch (_) {}
 
     final ui.Size screenSize = ui.Size(
       maxWidth > 0 ? maxWidth : 390.0,
       maxHeight > 0 ? maxHeight : 844.0,
     );
 
-    final filteredChildren = _filterOverlappingScreens(rootChildren, screenSize);
+    final filteredChildren = _filterOverlappingScreens(
+      rootChildren,
+      screenSize,
+    );
 
     final data = {
       'type': 'Frame',
       'name': 'Flutter Screen',
       'layoutMode': 'COLUMN',
-      'rect': {'x': 0.0, 'y': 0.0, 'w': screenSize.width, 'h': screenSize.height},
+      'rect': {
+        'x': 0.0,
+        'y': 0.0,
+        'w': screenSize.width,
+        'h': screenSize.height,
+      },
       'visual': {'backgroundColor': '#ffffffff'},
       'containerLayout': {
         'mainAxisAlignment': 'start',

@@ -163,6 +163,26 @@ bool _hasVisualProps(Map<String, dynamic> visual) {
 /// 3. Render 트리 크롤러 (Schema v2)
 /// =======================================================
 
+/// SliverPadding에서 패딩을 추출하여 containerLayout에 저장
+void _extractSliverPadding(RenderObject sliver, Map<String, dynamic> cl) {
+  if (sliver is RenderSliverPadding) {
+    final EdgeInsets? resolved = sliver.resolvedPadding;
+    if (resolved != null && !cl.containsKey('padding')) {
+      cl['padding'] = {
+        'top': resolved.top,
+        'right': resolved.right,
+        'bottom': resolved.bottom,
+        'left': resolved.left,
+      };
+    }
+  }
+  sliver.visitChildren((child) {
+    if (child is! RenderBox) {
+      _extractSliverPadding(child, cl);
+    }
+  });
+}
+
 List<Map<String, dynamic>> _crawlThroughSliver(RenderObject sliver) {
   final List<Map<String, dynamic>> results = [];
   sliver.visitChildren((child) {
@@ -214,6 +234,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   bool hasVisual = false;
   bool isLayoutNode = false;
   bool isSizedBox = false;
+  bool isCustomMultiChild = false;
 
   final String runtimeTypeStr = node.runtimeType.toString();
   final bool isSvgBoxTarget = _svgBoxTargets.contains(node);
@@ -399,6 +420,20 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     containerLayout['crossAxisAlignment'] = crossAlign;
     containerLayout['mainAxisSize'] = mainSize;
   }
+  // ---------------------------------------------------
+  // [5.5] RenderWrap
+  // ---------------------------------------------------
+  else if (node is RenderWrap) {
+    type = 'Frame';
+    isLayoutNode = true;
+    layoutMode = 'WRAP';
+    containerLayout['itemSpacing'] = node.spacing;
+    containerLayout['runSpacing'] = node.runSpacing;
+    containerLayout['mainAxisAlignment'] =
+        node.alignment.toString().split('.').last;
+    containerLayout['crossAxisAlignment'] =
+        node.crossAxisAlignment.toString().split('.').last;
+  }
 
   // ---------------------------------------------------
   // [6] DecoratedBox
@@ -507,6 +542,49 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       runtimeTypeStr.contains('CustomPaint')) {
     type = 'Frame';
     hasVisual = false;
+  }
+  // ---------------------------------------------------
+  // [9.5] CustomMultiChildLayout (NavigationToolbar, Scaffold 등)
+  // ---------------------------------------------------
+  else if (runtimeTypeStr.contains('CustomMultiChildLayoutBox')) {
+    type = 'Frame';
+    isLayoutNode = true;
+    isCustomMultiChild = true;
+
+    // 자식 좌표를 보고 방향 추론
+    double minX = double.infinity, maxX = -double.infinity;
+    double minY = double.infinity, maxY = -double.infinity;
+    int peekCount = 0;
+    node.visitChildren((child) {
+      if (child is RenderBox && child.hasSize) {
+        try {
+          final o = child.localToGlobal(Offset.zero);
+          if (o.dx < minX) minX = o.dx;
+          if (o.dx > maxX) maxX = o.dx;
+          if (o.dy < minY) minY = o.dy;
+          if (o.dy > maxY) maxY = o.dy;
+          peekCount++;
+        } catch (_) {}
+      }
+    });
+
+    if (peekCount >= 2) {
+      final xRange = maxX - minX;
+      final yRange = maxY - minY;
+      layoutMode = xRange > yRange ? 'ROW' : 'COLUMN';
+    } else {
+      layoutMode = 'ROW';
+    }
+
+    if (layoutMode == 'ROW') {
+      containerLayout['mainAxisAlignment'] = 'spaceBetween';
+      containerLayout['crossAxisAlignment'] = 'center';
+      containerLayout['mainAxisSize'] = 'max';
+    } else {
+      containerLayout['mainAxisAlignment'] = 'start';
+      containerLayout['crossAxisAlignment'] = 'stretch';
+      containerLayout['mainAxisSize'] = 'max';
+    }
   }
 
   // ---------------------------------------------------
@@ -633,10 +711,35 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           children.add(c);
         }
       } else {
+        // SliverPadding 감지 → padding + layout 설정
+        _extractSliverPadding(child, containerLayout);
+        if (containerLayout.containsKey('padding') && layoutMode == 'NONE') {
+          layoutMode = 'COLUMN';
+          isLayoutNode = true;
+          containerLayout['crossAxisAlignment'] = 'stretch';
+          containerLayout['mainAxisAlignment'] = 'start';
+        }
         children.addAll(_crawlThroughSliver(child));
       }
     });
   } catch (_) {}
+
+  // CustomMultiChildLayout: 자식을 위치 기준으로 정렬
+  if (isCustomMultiChild && children.length >= 2) {
+    if (layoutMode == 'COLUMN') {
+      children.sort((a, b) {
+        final ay = (a['rect'] as Map<String, dynamic>?)?['y'] as double? ?? 0.0;
+        final by = (b['rect'] as Map<String, dynamic>?)?['y'] as double? ?? 0.0;
+        return ay.compareTo(by);
+      });
+    } else {
+      children.sort((a, b) {
+        final ax = (a['rect'] as Map<String, dynamic>?)?['x'] as double? ?? 0.0;
+        final bx = (b['rect'] as Map<String, dynamic>?)?['x'] as double? ?? 0.0;
+        return ax.compareTo(bx);
+      });
+    }
+  }
 
   // Flex: itemSpacing 계산 (개별 gap 측정 → 가장 빈번한 값 사용)
   if (isFlex && _childMainAxisPositions.length >= 2) {
@@ -704,6 +807,30 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   if (children.isEmpty && !hasVisual && !_hasVisualProps(visual) &&
       (node.size.width < 1 && node.size.height < 1)) {
     return null;
+  }
+
+  // Debug: layoutMode가 NONE인 노드 상세 로깅
+  if (layoutMode == 'NONE' && children.isNotEmpty) {
+    print('[CRAWL-DEBUG] layoutMode=NONE with ${children.length} children');
+    print('  runtimeType: ${node.runtimeType}');
+    print('  runtimeTypeStr: $runtimeTypeStr');
+    print('  size: ${node.size}');
+    print('  hasVisual: $hasVisual');
+    print('  isLayoutNode: $isLayoutNode');
+    print('  isSizedBox: $isSizedBox');
+    print('  visual keys: ${visual.keys.toList()}');
+    print('  containerLayout: $containerLayout');
+    try {
+      final parent = node.parent;
+      if (parent != null) {
+        print('  parent runtimeType: ${parent.runtimeType}');
+      }
+    } catch (_) {}
+    for (int i = 0; i < children.length; i++) {
+      final c = children[i];
+      print('  child[$i]: type=${c['type']}, layoutMode=${c['layoutMode']}, '
+          'rect=${c['rect']}');
+    }
   }
 
   // ---------------------------------------------------

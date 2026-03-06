@@ -46,6 +46,102 @@ figma.ui.onmessage = function (msg) {
 };
 
 // ============================================================
+// Phase 0: Schema v2 → flat properties 변환
+// ============================================================
+
+// --- 0.1 normalizeSchemaV2 ---
+// Schema v2 (layoutMode, visual, containerLayout, childLayout) →
+// flat properties schema (properties에 모든 속성 병합)
+function normalizeSchemaV2(node) {
+  if (!node || typeof node !== "object") return;
+
+  // 자식 먼저 재귀
+  var children = node.children || [];
+  for (var i = 0; i < children.length; i++) {
+    normalizeSchemaV2(children[i]);
+  }
+
+  // v2 감지: containerLayout 또는 visual 필드가 있으면 변환
+  if (!node.visual && !node.containerLayout && !node.childLayout) return;
+
+  var props = node.properties || {};
+
+  // layoutMode (top-level → properties)
+  if (node.layoutMode && !props.layoutMode) {
+    if (node.layoutMode !== "NONE") {
+      props.layoutMode = node.layoutMode === "ROW" ? "HORIZONTAL" :
+                         node.layoutMode === "COLUMN" ? "VERTICAL" :
+                         node.layoutMode === "WRAP" ? "HORIZONTAL" :
+                         node.layoutMode;
+      if (node.layoutMode === "WRAP") {
+        props.layoutWrap = true;
+      }
+    }
+  }
+
+  // visual → properties
+  var visual = node.visual || {};
+  var visualKeys = Object.keys(visual);
+  for (var vi = 0; vi < visualKeys.length; vi++) {
+    var vk = visualKeys[vi];
+    var vv = visual[vk];
+    if (vk === "border" && vv && typeof vv === "object") {
+      // border: {color, width} → hasBorder, borderColor, borderWidth
+      props.hasBorder = true;
+      if (vv.color) props.borderColor = vv.color;
+      if (vv.width) props.borderWidth = vv.width;
+    } else if (vk === "borderRadius" && vv != null) {
+      props.borderRadius = String(vv);
+    } else if (vk === "shadow" && vv && vv.elevation) {
+      props.elevation = vv.elevation;
+    } else if (vv != null && !(vk in props)) {
+      // 나머지 (backgroundColor, content, fontFamily, fontSize, color, letterSpacing, textAlign, isIconBox, ...) 직접 복사
+      props[vk] = vv;
+    }
+  }
+
+  // containerLayout → properties
+  var cl = node.containerLayout || {};
+  if (cl.padding) {
+    if (cl.padding.top != null) props.paddingTop = cl.padding.top;
+    if (cl.padding.right != null) props.paddingRight = cl.padding.right;
+    if (cl.padding.bottom != null) props.paddingBottom = cl.padding.bottom;
+    if (cl.padding.left != null) props.paddingLeft = cl.padding.left;
+  }
+  if (cl.mainAxisAlignment && !props.mainAxisAlignment) {
+    props.mainAxisAlignment = cl.mainAxisAlignment;
+  }
+  if (cl.crossAxisAlignment && !props.crossAxisAlignment) {
+    props.crossAxisAlignment = cl.crossAxisAlignment;
+  }
+  if (cl.mainAxisSize && !props.mainAxisSize) {
+    var ms = cl.mainAxisSize;
+    props.mainAxisSize = (ms === "max" || ms === "MainAxisSize.max") ? "FIXED" : "AUTO";
+  }
+  if (cl.itemSpacing != null && props.itemSpacing == null) {
+    props.itemSpacing = cl.itemSpacing;
+  }
+  if (cl.runSpacing != null) props.runSpacing = cl.runSpacing;
+
+  // childLayout → properties (부모가 설정한 자식 레이아웃 정보)
+  var childLay = node.childLayout || {};
+  if (childLay.flexGrow != null && childLay.flexGrow > 0) {
+    props.flexGrow = childLay.flexGrow;
+    // sizing에 FILL이 있으면 tight (Expanded), 없으면 loose (Flexible)
+    var hasFill = childLay.sizingH === "FILL" || childLay.sizingV === "FILL";
+    props.flexFit = hasFill ? "FlexFit.tight" : "FlexFit.loose";
+  }
+
+  node.properties = props;
+
+  // v2 전용 필드 정리
+  delete node.visual;
+  delete node.containerLayout;
+  delete node.childLayout;
+  if (node.layoutMode) delete node.layoutMode;
+}
+
+// ============================================================
 // Phase 1: 전처리 (순수 JS, Figma API 호출 없음)
 // ============================================================
 
@@ -198,6 +294,26 @@ function mergePropsInto(target, source, isOutermost) {
 }
 
 // --- 1.3 inferMissingLayout ---
+function sortChildrenByAxis(children, axis) {
+  // axis: "y" or "x"
+  var sorted = children.slice();
+  sorted.sort(function (a, b) {
+    var aVal = (a.rect || {})[axis] || 0;
+    var bVal = (b.rect || {})[axis] || 0;
+    return aVal - bVal;
+  });
+  return sorted;
+}
+
+function isMonotonicallyIncreasing(children, axis) {
+  for (var i = 1; i < children.length; i++) {
+    var prev = (children[i - 1].rect || {})[axis] || 0;
+    var curr = (children[i].rect || {})[axis] || 0;
+    if (curr < prev) return false;
+  }
+  return true;
+}
+
 function inferMissingLayout(node) {
   if (!node || typeof node !== "object") return;
 
@@ -210,40 +326,41 @@ function inferMissingLayout(node) {
   if (node.type !== "Frame") return;
 
   var props = node.properties || {};
-  // layoutMode가 이미 있으면 그대로
-  if (props.layoutMode) return;
 
-  // 자식 0~1개: VERTICAL 기본값
-  if (children.length <= 1) {
+  // 자식이 2개 이상이면 위치 기준으로 정렬 + 방향 추론
+  if (children.length >= 2) {
+    var ySorted = sortChildrenByAxis(children, "y");
+    var xSorted = sortChildrenByAxis(children, "x");
+
+    var isVertical = isMonotonicallyIncreasing(ySorted, "y");
+    var isHorizontal = isMonotonicallyIncreasing(xSorted, "x");
+
+    if (!props.layoutMode) {
+      // 방향 추론: 양 축 모두 monotonic이면 range 비교로 주축 결정
+      if (isHorizontal && isVertical) {
+        var xRange = ((xSorted[xSorted.length-1].rect||{}).x||0) - ((xSorted[0].rect||{}).x||0);
+        var yRange = ((ySorted[ySorted.length-1].rect||{}).y||0) - ((ySorted[0].rect||{}).y||0);
+        props.layoutMode = (xRange > yRange) ? "HORIZONTAL" : "VERTICAL";
+      } else if (isHorizontal) {
+        props.layoutMode = "HORIZONTAL";
+      } else {
+        props.layoutMode = "VERTICAL";
+      }
+      node.properties = props;
+    }
+
+    // layoutMode에 맞게 자식 정렬 (기존 layoutMode가 있든 새로 추론했든)
+    var mode = props.layoutMode;
+    if (mode === "HORIZONTAL" || mode === "ROW") {
+      node.children = xSorted;
+    } else {
+      node.children = ySorted;
+    }
+  } else if (!props.layoutMode) {
+    // 자식 0~1개: VERTICAL 기본값
     props.layoutMode = "VERTICAL";
     node.properties = props;
-    return;
   }
-
-  // 자식 여러개: rect 위치 분석
-  var horizontal = true;
-  var vertical = true;
-
-  for (var i = 1; i < children.length; i++) {
-    var prev = (children[i - 1].rect || {});
-    var curr = (children[i].rect || {});
-    var prevX = prev.x || 0;
-    var prevY = prev.y || 0;
-    var currX = curr.x || 0;
-    var currY = curr.y || 0;
-
-    // 세로 배치 체크: 다음 자식이 아래에 있는지
-    if (currY <= prevY) vertical = false;
-    // 가로 배치 체크: 다음 자식이 오른쪽에 있는지
-    if (currX <= prevX) horizontal = false;
-  }
-
-  if (horizontal && !vertical) {
-    props.layoutMode = "HORIZONTAL";
-  } else {
-    props.layoutMode = "VERTICAL"; // 기본값
-  }
-  node.properties = props;
 }
 
 // --- 1.4 convertSpacersToItemSpacing ---
@@ -320,7 +437,57 @@ function convertSpacersToItemSpacing(node) {
   }
 }
 
-// --- 1.5 assignSizingHints ---
+// --- 1.5 recalcItemSpacing ---
+function recalcItemSpacing(node) {
+  if (!node || typeof node !== "object") return;
+
+  // 자식 먼저 재귀
+  var children = node.children || [];
+  for (var i = 0; i < children.length; i++) {
+    recalcItemSpacing(children[i]);
+  }
+
+  if (node.type !== "Frame") return;
+
+  var props = node.properties || {};
+  var mode = props.layoutMode;
+  if (!mode) return;
+  if (children.length < 2) return;
+
+  // rect 좌표 기반 gap 계산
+  var gaps = [];
+  for (var i = 0; i < children.length - 1; i++) {
+    // flexGrow 자식 간 gap은 FILL 크기에 포함되므로 제외
+    var currProps = children[i].properties || {};
+    var nextProps = children[i + 1].properties || {};
+    if ((currProps.flexGrow || 0) > 0 || (nextProps.flexGrow || 0) > 0) continue;
+    var currRect = children[i].rect || {};
+    var nextRect = children[i + 1].rect || {};
+    var gap;
+    if (mode === "HORIZONTAL" || mode === "ROW") {
+      var currEnd = (currRect.x || 0) + (currRect.w || 0);
+      gap = (nextRect.x || 0) - currEnd;
+    } else {
+      var currEnd = (currRect.y || 0) + (currRect.h || 0);
+      gap = (nextRect.y || 0) - currEnd;
+    }
+    // 음수 gap → 0 클램프
+    gaps.push(Math.max(0, Math.round(gap)));
+  }
+
+  if (gaps.length === 0) {
+    // 모든 gap이 flexGrow로 skip됨 → spacing은 0 (gap은 flex 분배)
+    props.itemSpacing = 0;
+    node.properties = props;
+    return;
+  }
+
+  // 최빈값(mode)으로 itemSpacing 결정
+  props.itemSpacing = mostCommonValue(gaps);
+  node.properties = props;
+}
+
+// --- 1.6 assignSizingHints ---
 function assignSizingHints(node, parentProps) {
   if (!node || typeof node !== "object") return;
 
@@ -508,6 +675,9 @@ async function renderWholeLayout(root) {
     throw new Error("루트 화면 노드를 찾지 못했습니다.");
   }
 
+  // --- Phase 0: Schema v2 → flat properties ---
+  normalizeSchemaV2(screen);
+
   // --- Phase 1: 전처리 ---
   console.log("[FlutterPlugin] Phase 1: 전처리 시작");
   var countBefore = countNodes(screen);
@@ -518,6 +688,7 @@ async function renderWholeLayout(root) {
   mergeWrapperChains(screen);
   inferMissingLayout(screen);
   convertSpacersToItemSpacing(screen);
+  recalcItemSpacing(screen);
   assignSizingHints(screen, null);
 
   var countAfter = countNodes(screen);
@@ -732,6 +903,14 @@ function applyAutoLayout(frame, props) {
     frame.layoutMode = "HORIZONTAL";
   } else {
     frame.layoutMode = "VERTICAL";
+  }
+
+  // layoutWrap
+  if (props.layoutWrap) {
+    frame.layoutWrap = "WRAP";
+    if (typeof props.runSpacing === "number") {
+      frame.counterAxisSpacing = props.runSpacing;
+    }
   }
 
   // itemSpacing
