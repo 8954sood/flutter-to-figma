@@ -622,6 +622,11 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   }
 
   // ---------------------------------------------------
+  // [10.5] TextField 구조 재편 플래그
+  // ---------------------------------------------------
+  final bool isTextFieldNode = visual['isTextField'] == true;
+
+  // ---------------------------------------------------
   // [11] 자식 순회
   // ---------------------------------------------------
   final List<Map<String, dynamic>> children = [];
@@ -746,6 +751,118 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         final bx = (b['rect'] as Map<String, dynamic>?)?['x'] as double? ?? 0.0;
         return ax.compareTo(bx);
       });
+    }
+  }
+
+  // ---------------------------------------------------
+  // [10.5] TextField 구조 재편: bg를 입력 영역에만, 패딩 적용
+  // ---------------------------------------------------
+  if (isTextFieldNode && children.isNotEmpty) {
+    // decoration box 찾기: 빈 Frame, 부모와 비슷한 너비
+    int decoIdx = -1;
+    for (int i = children.length - 1; i >= 0; i--) {
+      final c = children[i];
+      if (c['type'] == 'Frame' &&
+          (c['children'] as List?)?.isEmpty == true) {
+        final cr = c['rect'] as Map<String, dynamic>?;
+        if (cr != null) {
+          final cw = (cr['w'] as num?)?.toDouble() ?? 0;
+          if (cw >= node.size.width * 0.9) {
+            decoIdx = i;
+            break;
+          }
+        }
+      }
+    }
+
+    if (decoIdx >= 0) {
+      final decoBox = children[decoIdx];
+      final decoRect = decoBox['rect'] as Map<String, dynamic>;
+      final decoY = (decoRect['y'] as num).toDouble();
+      final decoH = (decoRect['h'] as num).toDouble();
+      final decoW = (decoRect['w'] as num).toDouble();
+      final decoBottom = decoY + decoH;
+
+      // 자식을 입력 영역 안 vs 아래(에러/헬퍼)로 분리
+      final List<Map<String, dynamic>> inputChildren = [];
+      final List<Map<String, dynamic>> belowChildren = [];
+      for (int i = 0; i < children.length; i++) {
+        if (i == decoIdx) continue;
+        final c = children[i];
+        final cy = ((c['rect'] as Map?)?['y'] as num?)?.toDouble() ?? 0;
+        if (cy >= decoBottom - 1) {
+          belowChildren.add(c);
+        } else {
+          inputChildren.add(c);
+        }
+      }
+
+      // contentPadding 계산 (첫 번째 콘텐츠 자식 좌표 기반)
+      Map<String, dynamic>? paddingMap;
+      for (final ic in inputChildren) {
+        final icRect = ic['rect'] as Map<String, dynamic>?;
+        if (icRect != null) {
+          final icX = (icRect['x'] as num?)?.toDouble() ?? 0;
+          final icY = (icRect['y'] as num?)?.toDouble() ?? 0;
+          final icW = (icRect['w'] as num?)?.toDouble() ?? 0;
+          final icH = (icRect['h'] as num?)?.toDouble() ?? 0;
+          final padLeft = icX - (decoRect['x'] as num).toDouble();
+          final padTop = icY - decoY;
+          final padRight = decoW - padLeft - icW;
+          final padBottom = decoH - padTop - icH;
+          if (padLeft >= 0 && padTop >= 0) {
+            paddingMap = {
+              'top': padTop > 0 ? padTop : 0.0,
+              'right': padRight > 0 ? padRight : 0.0,
+              'bottom': padBottom > 0 ? padBottom : 0.0,
+              'left': padLeft > 0 ? padLeft : 0.0,
+            };
+            break;
+          }
+        }
+      }
+
+      if (belowChildren.isNotEmpty) {
+        // 에러/헬퍼 텍스트 있음 → 구조 재편
+        // bg/border를 decoBox로 이동
+        decoBox['visual'] = Map<String, dynamic>.from(visual);
+        decoBox['children'] = inputChildren;
+        decoBox['layoutMode'] = 'COLUMN';
+        decoBox['containerLayout'] = <String, dynamic>{
+          'mainAxisAlignment': 'center',
+          'crossAxisAlignment': 'start',
+          'mainAxisSize': 'min',
+        };
+        if (paddingMap != null) {
+          (decoBox['containerLayout'] as Map<String, dynamic>)['padding'] =
+              paddingMap;
+        }
+
+        // 외부 → 투명 COLUMN
+        visual.clear();
+        hasVisual = false;
+        layoutMode = 'COLUMN';
+        isLayoutNode = true;
+        containerLayout['mainAxisAlignment'] = 'start';
+        containerLayout['crossAxisAlignment'] = 'stretch';
+        containerLayout['mainAxisSize'] = 'min';
+        containerLayout['itemSpacing'] = 4.0;
+
+        children.clear();
+        children.add(decoBox);
+        children.addAll(belowChildren);
+      } else {
+        // 에러 없음 → 현재 노드에 패딩 + 레이아웃 적용
+        layoutMode = 'COLUMN';
+        isLayoutNode = true;
+        containerLayout['mainAxisAlignment'] = 'center';
+        containerLayout['crossAxisAlignment'] = 'start';
+        containerLayout['mainAxisSize'] = 'min';
+        if (paddingMap != null) {
+          containerLayout['padding'] = paddingMap;
+        }
+        children.removeAt(decoIdx);
+      }
     }
   }
 
