@@ -508,6 +508,14 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           'w': node.size.width,
           'h': node.size.height,
         };
+        // Tight constraints (양축 고정 크기) → fixedSize 마킹
+        final ac = node.additionalConstraints;
+        if (ac.hasTightWidth && ac.maxWidth.isFinite &&
+            ac.hasTightHeight && ac.maxHeight.isFinite) {
+          final cl = childResult['childLayout'] as Map<String, dynamic>? ?? {};
+          cl['fixedSize'] = true;
+          childResult['childLayout'] = cl;
+        }
         return childResult;
       }
     }
@@ -595,8 +603,13 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
             hasVisual = true;
           }
         }
-        final br = _parseBorderRadius(decoration.borderRadius);
-        if (br != null) visual['borderRadius'] = br;
+        // BoxShape.circle → borderRadius = shortestSide / 2
+        if (decoration.shape == BoxShape.circle) {
+          visual['borderRadius'] = node.size.shortestSide / 2;
+        } else {
+          final br = _parseBorderRadius(decoration.borderRadius);
+          if (br != null) visual['borderRadius'] = br;
+        }
         if (decoration.boxShadow != null && decoration.boxShadow!.isNotEmpty) {
           visual['shadow'] = {'elevation': 2.0};
           hasVisual = true;
@@ -1064,23 +1077,39 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       children.length == 1 &&
       children.first['type'] == 'Frame') {
     final child = children.first;
-    final childVisual = child['visual'] as Map<String, dynamic>;
+    final childRect = child['rect'] as Map<String, dynamic>?;
+    final childW = (childRect?['w'] as num?)?.toDouble() ?? 0;
+    final childH = (childRect?['h'] as num?)?.toDouble() ?? 0;
 
-    // outer visual → child에 병합 (child 기존 값 우선)
-    visual.forEach((key, value) {
-      if (value != null && !childVisual.containsKey(key)) {
-        childVisual[key] = value;
-      }
-    });
+    // 자식이 부모보다 유의미하게 작으면 → merge하지 않고 센터링 컨테이너로 전환
+    if ((node.size.width - childW).abs() > 4 ||
+        (node.size.height - childH).abs() > 4) {
+      layoutMode = 'COLUMN';
+      isLayoutNode = true;
+      containerLayout['mainAxisAlignment'] = 'center';
+      containerLayout['crossAxisAlignment'] = 'center';
+      containerLayout['mainAxisSize'] = 'max';
+      // fall through → 일반 노드로 반환
+    } else {
+      // 같은 크기 → 기존 visual merge
+      final childVisual = child['visual'] as Map<String, dynamic>;
 
-    // outer rect 유지 (바운딩 박스)
-    child['rect'] = {
-      'x': offset.dx,
-      'y': offset.dy,
-      'w': node.size.width,
-      'h': node.size.height,
-    };
-    return child;
+      // outer visual → child에 병합 (child 기존 값 우선)
+      visual.forEach((key, value) {
+        if (value != null && !childVisual.containsKey(key)) {
+          childVisual[key] = value;
+        }
+      });
+
+      // outer rect 유지 (바운딩 박스)
+      child['rect'] = {
+        'x': offset.dx,
+        'y': offset.dy,
+        'w': node.size.width,
+        'h': node.size.height,
+      };
+      return child;
+    }
   }
 
   // Debug: layoutMode가 NONE인 노드 상세 로깅

@@ -131,6 +131,9 @@ function normalizeSchemaV2(node) {
     var hasFill = childLay.sizingH === "FILL" || childLay.sizingV === "FILL";
     props.flexFit = hasFill ? "FlexFit.tight" : "FlexFit.loose";
   }
+  if (childLay.fixedSize) {
+    props.fixedSize = true;
+  }
 
   node.properties = props;
 
@@ -501,7 +504,11 @@ function assignSizingHints(node, parentProps) {
   var parentCross = parentProps ? (parentProps.crossAxisAlignment || "") : "";
   var crossIsStretch = parentCross.indexOf("stretch") !== -1;
 
-  if (node.type === "Text") {
+  // Image 노드: 항상 FIXED (래스터 이미지는 고정 크기)
+  if (node.type === "Image") {
+    node._sizingH = "FIXED";
+    node._sizingV = "FIXED";
+  } else if (node.type === "Text") {
     node._sizingH = "HUG";
     node._sizingV = "HUG";
 
@@ -517,44 +524,49 @@ function assignSizingHints(node, parentProps) {
     node._sizingH = "FIXED";
     node._sizingV = "FIXED";
 
-    var flexGrow = props.flexGrow || 0;
-    var flexFit = String(props.flexFit || "");
-    var isTight = flexFit.indexOf("tight") !== -1;
-    var mainAxisSize = props.mainAxisSize || "";
-    var isAutoSize = mainAxisSize === "AUTO" || mainAxisSize === "min";
+    // 고정 크기 요소: 항상 FIXED 유지
+    if (props.isIconBox || props.isSvgBox || props.isVectorCandidate || props.fixedSize) {
+      // skip — FIXED/FIXED 유지
+    } else {
+      var flexGrow = props.flexGrow || 0;
+      var flexFit = String(props.flexFit || "");
+      var isTight = flexFit.indexOf("tight") !== -1;
+      var mainAxisSize = props.mainAxisSize || "";
+      var isAutoSize = mainAxisSize === "AUTO" || mainAxisSize === "min";
 
-    // flexGrow > 0 + tight
-    if (flexGrow > 0 && isTight) {
-      if (parentLayoutMode === "HORIZONTAL") {
-        node._sizingH = "FILL";
-      } else if (parentLayoutMode === "VERTICAL") {
-        node._sizingV = "FILL";
+      // flexGrow > 0 + tight
+      if (flexGrow > 0 && isTight) {
+        if (parentLayoutMode === "HORIZONTAL") {
+          node._sizingH = "FILL";
+        } else if (parentLayoutMode === "VERTICAL") {
+          node._sizingV = "FILL";
+        }
       }
-    }
-    // flexGrow > 0 but loose — still FILL in the main axis
-    else if (flexGrow > 0) {
-      if (parentLayoutMode === "HORIZONTAL") {
-        node._sizingH = "FILL";
-      } else if (parentLayoutMode === "VERTICAL") {
-        node._sizingV = "FILL";
+      // flexGrow > 0 but loose — still FILL in the main axis
+      else if (flexGrow > 0) {
+        if (parentLayoutMode === "HORIZONTAL") {
+          node._sizingH = "FILL";
+        } else if (parentLayoutMode === "VERTICAL") {
+          node._sizingV = "FILL";
+        }
       }
-    }
 
-    // 부모 cross=stretch
-    if (crossIsStretch) {
-      if (parentLayoutMode === "VERTICAL") {
-        node._sizingH = "FILL";
-      } else if (parentLayoutMode === "HORIZONTAL") {
-        node._sizingV = "FILL";
+      // 부모 cross=stretch
+      if (crossIsStretch) {
+        if (parentLayoutMode === "VERTICAL") {
+          node._sizingH = "FILL";
+        } else if (parentLayoutMode === "HORIZONTAL") {
+          node._sizingV = "FILL";
+        }
       }
-    }
 
-    // mainAxisSize=AUTO → 주축 HUG
-    if (isAutoSize) {
-      if (props.layoutMode === "HORIZONTAL") {
-        node._sizingH = "HUG";
-      } else if (props.layoutMode === "VERTICAL") {
-        node._sizingV = "HUG";
+      // mainAxisSize=AUTO → 주축 HUG
+      if (isAutoSize) {
+        if (props.layoutMode === "HORIZONTAL") {
+          node._sizingH = "HUG";
+        } else if (props.layoutMode === "VERTICAL") {
+          node._sizingV = "HUG";
+        }
       }
     }
   }
@@ -963,6 +975,17 @@ function applyAutoLayout(frame, props) {
 // ----------------------------
 function applySizing(figNode, jsonNode, parentLayoutDir) {
   try {
+    var props = jsonNode.properties || {};
+
+    // 고정 크기 요소: 항상 FIXED, layoutGrow 금지
+    if (props.isIconBox || props.isSvgBox || props.isVectorCandidate ||
+        jsonNode.type === "Image" || props.fixedSize) {
+      figNode.layoutSizingHorizontal = "FIXED";
+      figNode.layoutSizingVertical = "FIXED";
+      figNode.layoutGrow = 0;
+      return;
+    }
+
     var sizingH = jsonNode._sizingH || "FIXED";
     var sizingV = jsonNode._sizingV || "FIXED";
 
@@ -978,7 +1001,6 @@ function applySizing(figNode, jsonNode, parentLayoutDir) {
     figNode.layoutSizingVertical = sizingV;
 
     // flexGrow
-    var props = jsonNode.properties || {};
     if (props.flexGrow > 0) {
       figNode.layoutGrow = 1;
     }
@@ -1109,9 +1131,9 @@ function resolveFont(family, fontWeight) {
     w300: "Light",
     w400: "Regular",
     w500: "Medium",
-    w600: "Semi bold",
+    w600: "SemiBold",
     w700: "Bold",
-    w800: "Extra bold",
+    w800: "ExtraBold",
     w900: "Black",
   };
   var style = map[key] || "Regular";
