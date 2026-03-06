@@ -62,23 +62,9 @@ export function injectFigmaCrawlerViaHotReload(
   fs.writeFileSync(mainPath, modifiedMainCode, 'utf-8');
   output.appendLine(`[Hot Reload] main.dart에 import 추가 완료`);
 
-  // cleanup 함수: 파일 복구
+  // cleanup: 파일을 그대로 유지 (삭제하지 않음)
   const cleanup = () => {
-    try {
-      // main.dart 복구
-      if (fs.existsSync(mainPath)) {
-        fs.writeFileSync(mainPath, originalMainCode, 'utf-8');
-        output.appendLine(`[Hot Reload] main.dart 복구 완료`);
-      }
-
-      // 임시 크롤러 파일 삭제
-      if (fs.existsSync(tempCrawlerPath)) {
-        fs.unlinkSync(tempCrawlerPath);
-        output.appendLine(`[Hot Reload] 임시 크롤러 파일 삭제 완료`);
-      }
-    } catch (err: any) {
-      output.appendLine(`[Hot Reload] 파일 복구 실패: ${err.message}`);
-    }
+    output.appendLine(`[Hot Reload] 크롤러 파일 유지: ${tempCrawlerPath}`);
   };
 
   return { cleanup };

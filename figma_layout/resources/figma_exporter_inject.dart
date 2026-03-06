@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter_svg/flutter_svg.dart' show SvgPicture;
+// flutter_svg는 런타임 타입 문자열로 체크 (import 없이)
 
 /// =======================================================
 /// 0. 유틸 & 전역 상태
@@ -130,8 +130,8 @@ void _collectDesignInfoFromElements(Element element) {
     }
   }
 
-  // 4) SvgPicture.asset → 위치에 컬러 박스를 만들 대상 표시
-  if (widget is SvgPicture) {
+  // 4) SvgPicture.asset → 위치에 컬러 박스를 만들 대상 표시 (런타임 타입 체크)
+  if (widget.runtimeType.toString().contains('SvgPicture')) {
     final ro = element.renderObject;
     if (ro != null) {
       _svgBoxTargets.add(ro);
@@ -145,9 +145,40 @@ void _collectDesignInfoFromElements(Element element) {
 /// 2. Render 트리 크롤러
 /// =======================================================
 
+/// Sliver 노드를 통과하여 내부 RenderBox 자식들을 수집
+List<Map<String, dynamic>> _crawlThroughSliver(RenderObject sliver) {
+  final List<Map<String, dynamic>> results = [];
+  sliver.visitChildren((child) {
+    if (child is RenderBox) {
+      final res = _crawl(child);
+      if (res != null) results.add(res);
+    } else {
+      // 중첩 슬리버 (SliverPadding 등) → 재귀
+      results.addAll(_crawlThroughSliver(child));
+    }
+  });
+  return results;
+}
+
 Map<String, dynamic>? _crawl(RenderObject? node) {
-  // 화면에 보이지 않거나 크기가 없는 노드 제외
-  if (node == null || node is! RenderBox || !node.hasSize) return null;
+  if (node == null) return null;
+
+  // RenderSliver 계열은 통과만 시키고 내부 RenderBox를 수집
+  if (node is! RenderBox) {
+    // Sliver 노드: 자식들을 모아서 반환
+    final sliverChildren = _crawlThroughSliver(node);
+    if (sliverChildren.isEmpty) return null;
+    if (sliverChildren.length == 1) return sliverChildren.first;
+    // 여러 개면 래퍼 Frame으로 묶음
+    return {
+      'type': 'Frame',
+      'rect': sliverChildren.first['rect'],
+      'properties': <String, dynamic>{},
+      'children': sliverChildren,
+    };
+  }
+
+  if (!node.hasSize) return null;
   if (node.size.width == 0 && node.size.height == 0) return null;
 
   // ✨ 숨겨진 화면(Offstage) 필터링
@@ -431,13 +462,18 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   }
 
   // ---------------------------------------------------
-  // [9] 자식 순회
+  // [9] 자식 순회 (Sliver 자식도 통과하여 수집)
   // ---------------------------------------------------
   final List<Map<String, dynamic>> children = [];
   try {
     node.visitChildren((child) {
-      final c = _crawl(child);
-      if (c != null) children.add(c);
+      if (child is RenderBox) {
+        final c = _crawl(child);
+        if (c != null) children.add(c);
+      } else {
+        // RenderSliver 등 non-box 자식 → 통과하여 내부 RenderBox 수집
+        children.addAll(_crawlThroughSliver(child));
+      }
     });
   } catch (_) {}
 
@@ -548,22 +584,35 @@ List<Map<String, dynamic>> _filterOverlappingScreens(
 
 String figmaExtractorEntryPoint() {
   try {
+    debugPrint('[FigmaCrawler] ===== START =====');
     _designInfoByRenderObject.clear();
     _svgBoxTargets.clear();
 
     // 1) Element 트리에서 위젯 레벨 디자인 정보 수집
+    debugPrint('[FigmaCrawler] Step 1: Element 트리 순회 시작');
     final rootElement = WidgetsBinding.instance.renderViewElement;
     if (rootElement != null) {
-      rootElement.visitChildren(_collectDesignInfoFromElements);
+      try {
+        rootElement.visitChildren(_collectDesignInfoFromElements);
+        debugPrint('[FigmaCrawler] Step 1: 완료 (designInfo=${_designInfoByRenderObject.length}, svgTargets=${_svgBoxTargets.length})');
+      } catch (e, st) {
+        debugPrint('[FigmaCrawler] Step 1 ERROR: $e\n$st');
+      }
+    } else {
+      debugPrint('[FigmaCrawler] Step 1: rootElement is null!');
     }
 
     // 2) Render 트리 크롤링
+    debugPrint('[FigmaCrawler] Step 2: Render 트리 크롤링 시작');
     final root = RendererBinding.instance.renderView;
+    debugPrint('[FigmaCrawler] renderView type: ${root.runtimeType}');
     final List<Map<String, dynamic>> rootChildren = [];
     root.visitChildren((child) {
+      debugPrint('[FigmaCrawler] Root child: ${child.runtimeType}');
       final res = _crawl(child);
       if (res != null) rootChildren.add(res);
     });
+    debugPrint('[FigmaCrawler] Step 2: 완료 (rootChildren=${rootChildren.length})');
 
     double maxWidth = 0.0;
     double maxHeight = 0.0;
@@ -576,10 +625,12 @@ String figmaExtractorEntryPoint() {
       maxWidth > 0 ? maxWidth : 390.0,
       maxHeight > 0 ? maxHeight : 844.0,
     );
+    debugPrint('[FigmaCrawler] Screen size: ${screenSize.width}x${screenSize.height}');
 
     // ✨ 겹친 화면 필터링 (Ghost Screens 제거)
     final filteredChildren =
         _filterOverlappingScreens(rootChildren, screenSize);
+    debugPrint('[FigmaCrawler] After filter: ${filteredChildren.length} children');
 
     final data = {
       'type': 'Frame',
@@ -597,8 +648,11 @@ String figmaExtractorEntryPoint() {
       'children': filteredChildren,
     };
 
-    return jsonEncode(data);
+    final result = jsonEncode(data);
+    debugPrint('[FigmaCrawler] ===== DONE (${result.length} chars) =====');
+    return result;
   } catch (e, st) {
+    debugPrint('[FigmaCrawler] FATAL ERROR: $e\n$st');
     return jsonEncode({
       'error': e.toString(),
       'stackTrace': st.toString(),

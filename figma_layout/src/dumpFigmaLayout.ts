@@ -193,13 +193,17 @@ export async function dumpFigmaLayout(context: vscode.ExtensionContext) {
           `[Hot Reload] [Manual] Using VM Service: ${vmServiceUri}`,
         );
 
+        console.log('[FigmaLayout] 코드 주입 시작 (수동 URI)');
         output.appendLine('[Hot Reload] 코드 주입 중...');
         const injection = injectFigmaCrawlerViaHotReload(projectPath, context);
         cleanup = injection.cleanup;
+        console.log('[FigmaLayout] 코드 주입 완료');
       } else {
+        console.log('[FigmaLayout] 코드 주입 시작 (자동)');
         output.appendLine('[Hot Reload] 코드 주입 중...');
         const injection = injectFigmaCrawlerViaHotReload(projectPath, context);
         cleanup = injection.cleanup;
+        console.log('[FigmaLayout] 코드 주입 완료, Flutter 앱 실행...');
 
         output.appendLine('[Hot Reload] Flutter 앱 실행 중...');
         const result = await runFlutterAndGetVmServiceUri(projectPath);
@@ -218,17 +222,62 @@ export async function dumpFigmaLayout(context: vscode.ExtensionContext) {
       throw new Error('VM Service URI를 얻지 못했습니다.');
     }
 
-    // 3. Hot Reload 실행 (코드 주입이 이미 되어 있으면)
+    // 3. Hot Reload 실행 (VM Service를 통해 직접 수행)
     if (cleanup !== undefined) {
-      output.appendLine('[Hot Reload] Hot Reload 실행 중...');
+      output.appendLine('[Hot Reload] VM Service를 통해 Hot Reload 실행 중...');
       try {
-        await vscode.commands.executeCommand('flutter.hotReload');
-        await sleep(2000);
-        output.appendLine('[Hot Reload] Hot Reload 완료');
+        const reloadWs = new WebSocket(vmServiceUri);
+        await new Promise<void>((resolveReload, rejectReload) => {
+          reloadWs.on('error', rejectReload);
+          reloadWs.on('open', async () => {
+            try {
+              const reloadMsg = JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                method: 'reloadSources',
+                params: { isolateId: '' },
+              });
+              // getVM으로 isolateId 가져오기
+              const vmMsg = JSON.stringify({
+                jsonrpc: '2.0',
+                id: 0,
+                method: 'getVM',
+                params: {},
+              });
+              reloadWs.send(vmMsg);
+              reloadWs.on('message', (data) => {
+                try {
+                  const resp = JSON.parse(data.toString());
+                  if (resp.id === 0 && resp.result?.isolates?.length > 0) {
+                    const isoId = resp.result.isolates[0].id;
+                    reloadWs.send(
+                      JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'reloadSources',
+                        params: { isolateId: isoId },
+                      }),
+                    );
+                  }
+                  if (resp.id === 1) {
+                    reloadWs.close();
+                    resolveReload();
+                  }
+                } catch {}
+              });
+            } catch (e) {
+              rejectReload(e);
+            }
+          });
+        });
+        await sleep(3000);
+        console.log('[FigmaLayout] ✅ VM Service Hot Reload 완료');
       } catch (e: any) {
-        output.appendLine(
-          `[Hot Reload] Hot Reload 실패 (무시 가능): ${e.message}`,
-        );
+        console.log(`[FigmaLayout] ❌ VM Service Hot Reload 실패: ${e.message}`);
+        try {
+          await vscode.commands.executeCommand('flutter.hotReload');
+          await sleep(2000);
+        } catch {}
       }
     }
 
@@ -267,7 +316,9 @@ async function dumpFigmaLayoutFromVm(
 
     ws.on('open', async () => {
       try {
+        console.log('[FigmaLayout] WebSocket connected, calling getVM...');
         const vm = await sendRequest('getVM');
+        console.log('[FigmaLayout] getVM result:', JSON.stringify(vm.isolates?.map((i: any) => ({ id: i.id, name: i.name }))));
         const isolates = vm.isolates as Array<{ id: string; name: string }>;
         if (!isolates || isolates.length === 0) {
           throw new Error('VM에 isolates가 없습니다.');
@@ -275,6 +326,7 @@ async function dumpFigmaLayoutFromVm(
         const isolateId = isolates[0].id;
         output.appendLine(`[Hot Reload] isolate: ${isolateId}`);
 
+        console.log('[FigmaLayout] getIsolate 호출...');
         output.appendLine('[Hot Reload] figma_temp_crawler 라이브러리 찾는 중...');
         const isolate = await sendRequest('getIsolate', { isolateId });
         const libraries = isolate.libraries as Array<{
@@ -293,61 +345,53 @@ async function dumpFigmaLayoutFromVm(
           );
         }
 
+        console.log(`[FigmaLayout] 총 ${libraries.length}개 라이브러리`);
         if (!crawlerLib) {
-          output.appendLine('[Hot Reload] 사용 가능한 라이브러리 목록:');
-          libraries.slice(0, 10).forEach((lib) => {
-            output.appendLine(`  - ${lib.uri}`);
-          });
-          if (libraries.length > 10) {
-            output.appendLine(`  ... 외 ${libraries.length - 10}개`);
-          }
+          console.log('[FigmaLayout] ❌ figma_temp_crawler 못찾음. 라이브러리 목록:');
+          libraries.forEach((lib) => console.log(`  - ${lib.uri}`));
         }
 
         if (crawlerLib) {
-          output.appendLine(
-            `[Hot Reload] 라이브러리 찾음: ${crawlerLib.uri} (${crawlerLib.id})`,
-          );
+          console.log(`[FigmaLayout] ✅ 라이브러리 찾음: ${crawlerLib.uri} (${crawlerLib.id})`);
         } else {
-          output.appendLine(
-            '[Hot Reload] 경고: figma_temp_crawler 라이브러리를 찾지 못했습니다. 전역 컨텍스트에서 시도합니다.',
-          );
+          console.log('[FigmaLayout] 전역 컨텍스트로 fallback');
         }
 
         await sleep(1500);
 
-        output.appendLine(
-          '[Hot Reload] evaluate로 figmaExtractorEntryPoint() 호출 중...',
-        );
+        console.log('[FigmaLayout] evaluate 호출 시작...');
         let result: any;
 
         if (crawlerLib) {
           try {
+            console.log(`[FigmaLayout] 라이브러리 컨텍스트 evaluate (targetId: ${crawlerLib.id})`);
             result = await sendRequest('evaluate', {
               isolateId,
               targetId: crawlerLib.id,
               expression: 'figmaExtractorEntryPoint()',
             });
+            console.log('[FigmaLayout] ✅ evaluate 성공:', JSON.stringify(result).substring(0, 500));
           } catch (e: any) {
-            output.appendLine(
-              `[Hot Reload] 라이브러리 컨텍스트 실패, 전역에서 시도: ${e.message}`,
-            );
+            console.log('[FigmaLayout] ❌ 라이브러리 컨텍스트 실패:', JSON.stringify(e?.data ?? e.message));
+            console.log('[FigmaLayout] 전역 컨텍스트로 재시도...');
             result = await sendRequest('evaluate', {
               isolateId,
               expression: 'figmaExtractorEntryPoint()',
             });
+            console.log('[FigmaLayout] 전역 결과:', JSON.stringify(result).substring(0, 500));
           }
         } else {
-          output.appendLine(
-            '[Hot Reload] 전역 컨텍스트에서 함수 호출 시도...',
-          );
           try {
+            console.log('[FigmaLayout] 전역 컨텍스트 evaluate...');
             result = await sendRequest('evaluate', {
               isolateId,
               expression: 'figmaExtractorEntryPoint()',
             });
+            console.log('[FigmaLayout] ✅ 전역 evaluate 성공:', JSON.stringify(result).substring(0, 500));
           } catch (e: any) {
+            console.log('[FigmaLayout] ❌ 전역 evaluate 실패:', JSON.stringify(e?.data ?? e.message));
             throw new Error(
-              `함수를 찾을 수 없습니다. Hot Reload가 완료되었는지 확인하세요: ${e.message}`,
+              `함수를 찾을 수 없습니다. Hot Reload가 완료되었는지 확인하세요: ${JSON.stringify(e?.data ?? e.message)}`,
             );
           }
         }

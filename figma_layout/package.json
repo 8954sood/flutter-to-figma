@@ -39,8 +39,9 @@
     "@types/vscode": "^1.85.0",
     "@types/ws": "^8.5.10",
     "typescript": "^5.3.3",
-    "ws": "^8.14.2",
     "vscode-test": "^1.6.1"
   },
-  "dependencies": {}
+  "dependencies": {
+    "ws": "^8.14.2"
+  }
 }
