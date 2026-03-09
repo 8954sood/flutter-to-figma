@@ -854,6 +854,35 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     }
   }
 
+  // AppBar 패턴: ROW + 3자식 → leading(FILL) + title(HUG) + action(FILL)
+  // 타이틀이 항상 정중앙에 오도록 leading/action이 남은 공간을 균등 분할
+  if (isCustomMultiChild && layoutMode == 'ROW' && children.length == 3) {
+    // leading (첫 번째) → FILL, 내용 왼쪽 정렬
+    final leadCl = children[0]['childLayout'] as Map<String, dynamic>? ?? {};
+    leadCl['flexGrow'] = 1;
+    leadCl['sizingH'] = 'FILL';
+    children[0]['childLayout'] = leadCl;
+
+    // title (가운데) → flexGrow 0 (자연 크기)
+    final titleCl = children[1]['childLayout'] as Map<String, dynamic>? ?? {};
+    titleCl['flexGrow'] = 0;
+    children[1]['childLayout'] = titleCl;
+
+    // action (마지막) → FILL, 내용 오른쪽 정렬
+    final actionCl = children[2]['childLayout'] as Map<String, dynamic>? ?? {};
+    actionCl['flexGrow'] = 1;
+    actionCl['sizingH'] = 'FILL';
+    children[2]['childLayout'] = actionCl;
+
+    // action 프레임 내부 정렬을 end로 변경
+    final actionContainer = children[2]['containerLayout'] as Map<String, dynamic>? ?? {};
+    actionContainer['mainAxisAlignment'] = 'end';
+    children[2]['containerLayout'] = actionContainer;
+
+    // spaceBetween → center (FILL이 공간 분배를 담당)
+    containerLayout['mainAxisAlignment'] = 'center';
+  }
+
   // ---------------------------------------------------
   // [10.5] TextField 구조 재편: bg를 입력 영역에만, 패딩 적용
   // ---------------------------------------------------
