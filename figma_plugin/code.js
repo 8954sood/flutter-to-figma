@@ -108,6 +108,8 @@ function normalizeSchemaV2(node) {
       } else if (vv.elevation) {
         props.elevation = vv.elevation;
       }
+    } else if (vk === "gradient" && vv && typeof vv === "object") {
+      props.gradient = vv;
     } else if (vv != null && !(vk in props)) {
       // 나머지 (backgroundColor, content, fontFamily, fontSize, color, letterSpacing, textAlign, isIconBox, ...) 직접 복사
       props[vk] = vv;
@@ -437,6 +439,10 @@ function mergePropsInto(target, source, isOutermost) {
       if (!target[key] || isTransparent(target[key])) {
         if (!isTransparent(val)) target[key] = val;
       }
+      continue;
+    }
+    if (key === "gradient") {
+      if (!(key in target)) target[key] = val;
       continue;
     }
     if (key === "hasBorder" || key === "borderWidth" || key === "borderColor" || key === "borderRadius" ||
@@ -1107,6 +1113,8 @@ function applyVisualProps(frame, props) {
       console.warn("[FlutterPlugin] background image decode failed", e);
       applyBgColor(frame, props);
     }
+  } else if (props.gradient) {
+    applyGradient(frame, props);
   } else {
     applyBgColor(frame, props);
   }
@@ -1175,6 +1183,74 @@ function applyBgColor(frame, props) {
   } else {
     frame.fills = [];
   }
+}
+
+function applyGradient(frame, props) {
+  var g = props.gradient;
+  var colors = g.colors || [];
+  var stops = g.stops || [];
+
+  var gradientStops = [];
+  for (var i = 0; i < colors.length; i++) {
+    var c = parseFlutterColor(colors[i]);
+    gradientStops.push({
+      position: stops[i] != null ? stops[i] : (i / Math.max(colors.length - 1, 1)),
+      color: { r: c.r, g: c.g, b: c.b, a: c.a }
+    });
+  }
+
+  var fill = { gradientStops: gradientStops };
+
+  if (g.type === "linear") {
+    fill.type = "GRADIENT_LINEAR";
+    var bx = g.begin ? g.begin.x : 0.5;
+    var by = g.begin ? g.begin.y : 0;
+    var ex = g.end ? g.end.x : 0.5;
+    var ey = g.end ? g.end.y : 1;
+    fill.gradientTransform = buildLinearGradientTransform(bx, by, ex, ey);
+  } else if (g.type === "radial") {
+    fill.type = "GRADIENT_RADIAL";
+    var cx = g.center ? g.center.x : 0.5;
+    var cy = g.center ? g.center.y : 0.5;
+    var r = g.radius || 0.5;
+    fill.gradientTransform = buildRadialGradientTransform(cx, cy, r);
+  } else if (g.type === "sweep") {
+    fill.type = "GRADIENT_ANGULAR";
+    var cx = g.center ? g.center.x : 0.5;
+    var cy = g.center ? g.center.y : 0.5;
+    fill.gradientTransform = buildSweepGradientTransform(cx, cy);
+  }
+
+  frame.fills = [fill];
+}
+
+function buildLinearGradientTransform(bx, by, ex, ey) {
+  var dx = ex - bx;
+  var dy = ey - by;
+  var len = Math.sqrt(dx * dx + dy * dy) || 1;
+  var ux = dx / len;
+  var uy = dy / len;
+  var vx = -uy;
+  var vy = ux;
+  return [
+    [ux * len, vx * len, bx],
+    [uy * len, vy * len, by]
+  ];
+}
+
+function buildRadialGradientTransform(cx, cy, r) {
+  return [
+    [r, 0, cx - r / 2],
+    [0, r, cy - r / 2]
+  ];
+}
+
+function buildSweepGradientTransform(cx, cy) {
+  var r = 0.5;
+  return [
+    [r, 0, cx - r / 2],
+    [0, r, cy - r / 2]
+  ];
 }
 
 // ----------------------------

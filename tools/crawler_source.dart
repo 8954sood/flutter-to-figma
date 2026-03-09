@@ -394,6 +394,67 @@ double? _parseBorderRadius(dynamic br) {
   return double.tryParse(s);
 }
 
+/// gradient 추출 (LinearGradient, RadialGradient, SweepGradient)
+Map<String, dynamic>? _extractGradient(dynamic gradient) {
+  if (gradient == null) return null;
+  final colors = <String>[];
+  final stops = <double>[];
+  try {
+    final colorList = gradient.colors as List<Color>;
+    for (final c in colorList) {
+      colors.add(_colorToHex(c)!);
+    }
+    final stopList = gradient.stops as List<double>?;
+    if (stopList != null) {
+      stops.addAll(stopList);
+    } else {
+      for (int i = 0; i < colors.length; i++) {
+        stops.add(i / (colors.length - 1));
+      }
+    }
+  } catch (_) { return null; }
+
+  final map = <String, dynamic>{
+    'colors': colors,
+    'stops': stops,
+  };
+
+  final typeName = gradient.runtimeType.toString();
+  if (typeName.contains('LinearGradient')) {
+    map['type'] = 'linear';
+    try {
+      final begin = gradient.begin as Alignment;
+      final end = gradient.end as Alignment;
+      map['begin'] = {'x': (begin.x + 1) / 2, 'y': (begin.y + 1) / 2};
+      map['end'] = {'x': (end.x + 1) / 2, 'y': (end.y + 1) / 2};
+    } catch (_) {
+      map['begin'] = {'x': 0.5, 'y': 0.0};
+      map['end'] = {'x': 0.5, 'y': 1.0};
+    }
+  } else if (typeName.contains('RadialGradient')) {
+    map['type'] = 'radial';
+    try {
+      final center = gradient.center as Alignment;
+      map['center'] = {'x': (center.x + 1) / 2, 'y': (center.y + 1) / 2};
+      map['radius'] = gradient.radius as double;
+    } catch (_) {
+      map['center'] = {'x': 0.5, 'y': 0.5};
+      map['radius'] = 0.5;
+    }
+  } else if (typeName.contains('SweepGradient')) {
+    map['type'] = 'sweep';
+    try {
+      final center = gradient.center as Alignment;
+      map['center'] = {'x': (center.x + 1) / 2, 'y': (center.y + 1) / 2};
+      map['startAngle'] = gradient.startAngle as double;
+      map['endAngle'] = gradient.endAngle as double;
+    } catch (_) {
+      map['center'] = {'x': 0.5, 'y': 0.5};
+    }
+  }
+  return map;
+}
+
 /// 노드 트리에 실질적 콘텐츠(Text, Image, visual 있는 Frame)가 있는지
 bool _hasContentRecursive(Map<String, dynamic> node) {
   final type = node['type'];
@@ -401,6 +462,7 @@ bool _hasContentRecursive(Map<String, dynamic> node) {
   final vis = node['visual'] as Map<String, dynamic>? ?? {};
   if (vis['content'] != null ||
       vis['backgroundColor'] != null ||
+      vis['gradient'] != null ||
       vis['border'] != null ||
       vis['imagePath'] != null)
     return true;
@@ -863,6 +925,13 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         if (decoration.color != null) {
           visual['backgroundColor'] = _colorToHex(decoration.color);
           hasVisual = true;
+        }
+        if (decoration.gradient != null) {
+          final grad = _extractGradient(decoration.gradient);
+          if (grad != null) {
+            visual['gradient'] = grad;
+            hasVisual = true;
+          }
         }
         if (decoration.image != null) {
           final DecorationImage decorationImage = decoration.image!;
