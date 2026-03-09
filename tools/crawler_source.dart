@@ -50,9 +50,15 @@ class DesignInfo {
 final Map<RenderObject, DesignInfo> _designInfoByRenderObject = {};
 final Set<RenderObject> _svgBoxTargets = {};
 final Map<RenderObject, String> _imageDataByNode = {};
+final Set<RenderObject> _customPaintCaptures = {};
 final Map<RenderObject, String> _widgetNameByRenderObject = {};
 String? _asyncExportResult;
 bool _asyncExportBusy = false;
+
+void _markCaptureRecursive(RenderObject ro) {
+  _customPaintCaptures.add(ro);
+  ro.visitChildren((child) => _markCaptureRecursive(child));
+}
 
 /// =======================================================
 /// 0.5 Pre-capture: 이미지/아이콘 → base64 (async)
@@ -82,7 +88,9 @@ Future<void> _preCaptureImages(RenderObject node) async {
         );
         final picture = recorder.endRecording();
         final resized = await picture.toImage(targetW, targetH);
-        final byteData = await resized.toByteData(format: ui.ImageByteFormat.png);
+        final byteData = await resized.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
         if (byteData != null) {
           _imageDataByNode[node] = base64Encode(byteData.buffer.asUint8List());
         }
@@ -94,7 +102,8 @@ Future<void> _preCaptureImages(RenderObject node) async {
   if (node is RenderParagraph) {
     try {
       final span = node.text;
-      if (span is TextSpan && span.style?.fontFamily?.contains('MaterialIcons') == true) {
+      if (span is TextSpan &&
+          span.style?.fontFamily?.contains('MaterialIcons') == true) {
         final recorder = ui.PictureRecorder();
         final canvas = Canvas(
           recorder,
@@ -114,6 +123,86 @@ Future<void> _preCaptureImages(RenderObject node) async {
         final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
         if (byteData != null) {
           _imageDataByNode[node] = base64Encode(byteData.buffer.asUint8List());
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Checkbox / Switch 등 → 가장 가까운 RepaintBoundary에서 crop 캡처
+  // 실제 컴포넌트보다 사방 2px 넓게 캡처하여 overflow paint(리플/그림자) 포함
+  // 출력 PNG는 항상 (w+4)x(h+4) 크기, 소스 부족 영역은 투명
+  if (node is RenderBox &&
+      _customPaintCaptures.contains(node) &&
+      !_imageDataByNode.containsKey(node)) {
+    try {
+      final w = node.size.width;
+      final h = node.size.height;
+      if (w > 0 && h > 0) {
+        const double pr = 2.0;
+        const double pad = 4.0;
+        // 충분히 큰 RepaintBoundary를 찾음 (노드보다 사방 pad 이상 큰 것)
+        RenderObject? ancestor = node.parent;
+        RenderRepaintBoundary? bestBoundary;
+        while (ancestor != null) {
+          if (ancestor is RenderRepaintBoundary) {
+            bestBoundary = ancestor;
+            if (ancestor.size.width >= w + pad * 2 &&
+                ancestor.size.height >= h + pad * 2) {
+              break;
+            }
+          }
+          ancestor = ancestor.parent;
+        }
+        ancestor = bestBoundary;
+        if (ancestor is RenderRepaintBoundary) {
+          final img = await ancestor.toImage(pixelRatio: pr);
+          final nodeOffset = node.localToGlobal(Offset.zero);
+          final boundaryOffset = (ancestor as RenderBox).localToGlobal(
+            Offset.zero,
+          );
+          // 출력 이미지 크기 (항상 고정)
+          final outW = ((w + pad * 2) * pr).round();
+          final outH = ((h + pad * 2) * pr).round();
+          // 소스 crop 영역 (pixel 좌표)
+          final rawSrcX = (nodeOffset.dx - boundaryOffset.dx - pad) * pr;
+          final rawSrcY = (nodeOffset.dy - boundaryOffset.dy - pad) * pr;
+          // 클램프: 소스 이미지 밖이면 잘라내고, 대상 오프셋 조정
+          final srcX = rawSrcX.clamp(0.0, img.width.toDouble());
+          final srcY = rawSrcY.clamp(0.0, img.height.toDouble());
+          final dstX = srcX - rawSrcX; // 소스가 잘린만큼 대상에서 오프셋
+          final dstY = srcY - rawSrcY;
+          final srcW = (outW.toDouble() - dstX).clamp(
+            0.0,
+            img.width.toDouble() - srcX,
+          );
+          final srcH = (outH.toDouble() - dstY).clamp(
+            0.0,
+            img.height.toDouble() - srcY,
+          );
+          if (srcW > 0 && srcH > 0) {
+            final recorder = ui.PictureRecorder();
+            final canvas = Canvas(
+              recorder,
+              Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
+            );
+            // 배경 투명 (기본값)
+            canvas.drawImageRect(
+              img,
+              Rect.fromLTWH(srcX, srcY, srcW, srcH),
+              Rect.fromLTWH(dstX, dstY, srcW, srcH),
+              Paint(),
+            );
+            final picture = recorder.endRecording();
+            final cropped = await picture.toImage(outW, outH);
+            final byteData = await cropped.toByteData(
+              format: ui.ImageByteFormat.png,
+            );
+            if (byteData != null) {
+              _imageDataByNode[node] = base64Encode(
+                byteData.buffer.asUint8List(),
+              );
+            }
+          }
         }
       }
     } catch (_) {}
@@ -201,7 +290,9 @@ void _collectDesignInfoFromElements(Element element) {
           borderColor = best.color;
           borderWidth = best.width;
         }
-        final uniform = sides.every((s) => s.width == sides[0].width && s.color == sides[0].color);
+        final uniform = sides.every(
+          (s) => s.width == sides[0].width && s.color == sides[0].color,
+        );
         if (!uniform) {
           borderTopW = border.top.width;
           borderRightW = border.right.width;
@@ -269,15 +360,20 @@ void _collectDesignInfoFromElements(Element element) {
 
   // 전용 위젯 이름 태깅
   final widgetTypeName = widget.runtimeType.toString();
-  const namedWidgets = {
-    'NavigationToolbar',
-    'BottomNavigationBar',
-    'Scaffold',
-  };
+  const namedWidgets = {'NavigationToolbar', 'BottomNavigationBar', 'Scaffold'};
   if (namedWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
     if (ro != null) {
       _widgetNameByRenderObject[ro] = widgetTypeName;
+    }
+  }
+
+  // Checkbox / Switch → renderObject와 하위 자식 모두 캡처 대상 등록
+  const captureWidgets = {'Checkbox', 'Switch', 'CupertinoSwitch'};
+  if (captureWidgets.contains(widgetTypeName)) {
+    final ro = element.renderObject;
+    if (ro != null) {
+      _markCaptureRecursive(ro);
     }
   }
 
@@ -303,8 +399,11 @@ bool _hasContentRecursive(Map<String, dynamic> node) {
   final type = node['type'];
   if (type == 'Text' || type == 'Image') return true;
   final vis = node['visual'] as Map<String, dynamic>? ?? {};
-  if (vis['content'] != null || vis['backgroundColor'] != null ||
-      vis['border'] != null || vis['imagePath'] != null) return true;
+  if (vis['content'] != null ||
+      vis['backgroundColor'] != null ||
+      vis['border'] != null ||
+      vis['imagePath'] != null)
+    return true;
   final children = node['children'] as List?;
   if (children == null) return false;
   for (final c in children) {
@@ -384,6 +483,51 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   if (!node.hasSize) return null;
   if (node.size.width == 0 && node.size.height == 0) return null;
   if (node is RenderOffstage && node.offstage) return null;
+
+  // Checkbox / Switch 등: 이미지로 캡처된 경우
+  // PNG는 사방 8px 여유 포함, wrapper Frame은 실제 크기 + center/center 정렬
+  if (_customPaintCaptures.contains(node)) {
+    final b64 = _imageDataByNode[node];
+    if (b64 != null) {
+      Offset cpOffset;
+      try {
+        cpOffset = (node.parentData as BoxParentData).offset;
+      } catch (_) {
+        cpOffset = Offset.zero;
+      }
+      const double pad = 4.0;
+      return {
+        'type': 'Frame',
+        'layoutMode': 'NONE',
+        'clipsContent': false,
+        'rect': {
+          'x': cpOffset.dx,
+          'y': cpOffset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
+        },
+        'visual': <String, dynamic>{},
+        'containerLayout': {
+          'mainAxisAlignment': 'center',
+          'crossAxisAlignment': 'center',
+        },
+        'children': <Map<String, dynamic>>[
+          {
+            'type': 'Image',
+            'layoutMode': 'NONE',
+            'rect': {
+              'x': -pad,
+              'y': -pad,
+              'w': node.size.width + pad * 2,
+              'h': node.size.height + pad * 2,
+            },
+            'visual': {'imageBase64': b64, 'imageFit': 'fill'},
+            'children': <Map<String, dynamic>>[],
+          },
+        ],
+      };
+    }
+  }
 
   Offset offset;
   try {
@@ -699,10 +843,14 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     layoutMode = 'WRAP';
     containerLayout['itemSpacing'] = node.spacing;
     containerLayout['runSpacing'] = node.runSpacing;
-    containerLayout['mainAxisAlignment'] =
-        node.alignment.toString().split('.').last;
-    containerLayout['crossAxisAlignment'] =
-        node.crossAxisAlignment.toString().split('.').last;
+    containerLayout['mainAxisAlignment'] = node.alignment
+        .toString()
+        .split('.')
+        .last;
+    containerLayout['crossAxisAlignment'] = node.crossAxisAlignment
+        .toString()
+        .split('.')
+        .last;
   }
   // ---------------------------------------------------
   // [6] DecoratedBox
@@ -728,8 +876,10 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         if (decoration.border != null) {
           final border = decoration.border;
           if (border is Border) {
-            final top = border.top, right = border.right,
-                  bottom = border.bottom, left = border.left;
+            final top = border.top,
+                right = border.right,
+                bottom = border.bottom,
+                left = border.left;
             final sides = [top, right, bottom, left];
             BorderSide? bestSide;
             for (final s in sides) {
@@ -740,7 +890,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
                 'color': _colorToHex(bestSide.color),
                 'width': bestSide.width,
               };
-              final uniform = sides.every((s) => s.width == top.width && s.color == top.color);
+              final uniform = sides.every(
+                (s) => s.width == top.width && s.color == top.color,
+              );
               if (!uniform) {
                 borderMap['topWidth'] = top.width;
                 borderMap['rightWidth'] = right.width;
@@ -875,7 +1027,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         // shape.side → border (OutlinedButton 등 Material 버튼의 보더)
         try {
           final side = shape.side;
-          if (side != null && side.width > 0 && side.style == BorderStyle.solid) {
+          if (side != null &&
+              side.width > 0 &&
+              side.style == BorderStyle.solid) {
             visual['border'] = {
               'color': _colorToHex(side.color),
               'width': side.width,
@@ -900,15 +1054,18 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       final childResult = _crawl(singleChild);
       if (childResult != null) {
         if (br != null && br > 0) {
-          final childVisual = childResult['visual'] as Map<String, dynamic>? ?? {};
+          final childVisual =
+              childResult['visual'] as Map<String, dynamic>? ?? {};
           if (!childVisual.containsKey('borderRadius')) {
             childVisual['borderRadius'] = br;
             childResult['visual'] = childVisual;
           }
         }
         childResult['rect'] = {
-          'x': offset.dx, 'y': offset.dy,
-          'w': node.size.width, 'h': node.size.height,
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
         };
         return childResult;
       }
@@ -1018,105 +1175,109 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   final List<double> _childMainAxisPositions = [];
 
   try {
-    if (!_skipChildren) node.visitChildren((child) {
-      if (child is RenderBox) {
-        final c = _crawl(child);
-        if (c != null) {
-          // Flex 자식: childLayout 설정
-          if (isFlex) {
-            final flexNode = node as RenderFlex;
-            final isHorizontal = flexNode.direction == Axis.horizontal;
-            final childLayout = c['childLayout'] as Map<String, dynamic>? ?? {};
+    if (!_skipChildren)
+      node.visitChildren((child) {
+        if (child is RenderBox) {
+          final c = _crawl(child);
+          if (c != null) {
+            // Flex 자식: childLayout 설정
+            if (isFlex) {
+              final flexNode = node as RenderFlex;
+              final isHorizontal = flexNode.direction == Axis.horizontal;
+              final childLayout =
+                  c['childLayout'] as Map<String, dynamic>? ?? {};
 
-            final parentData = child.parentData;
-            if (parentData is FlexParentData) {
-              final flex = parentData.flex ?? 0;
-              final isTight = parentData.fit == FlexFit.tight;
+              final parentData = child.parentData;
+              if (parentData is FlexParentData) {
+                final flex = parentData.flex ?? 0;
+                final isTight = parentData.fit == FlexFit.tight;
 
-              if (flex > 0 && isTight) {
-                // Expanded
-                childLayout['flexGrow'] = flex;
-                if (isHorizontal) {
-                  childLayout['sizingH'] = 'FILL';
+                if (flex > 0 && isTight) {
+                  // Expanded
+                  childLayout['flexGrow'] = flex;
+                  if (isHorizontal) {
+                    childLayout['sizingH'] = 'FILL';
+                    childLayout['sizingV'] = 'HUG';
+                  } else {
+                    childLayout['sizingH'] = 'HUG';
+                    childLayout['sizingV'] = 'FILL';
+                  }
+                } else if (flex > 0) {
+                  // Flexible (loose)
+                  childLayout['flexGrow'] = flex;
+                  childLayout['sizingH'] = 'HUG';
                   childLayout['sizingV'] = 'HUG';
                 } else {
+                  // 일반 자식
+                  childLayout['flexGrow'] = 0;
                   childLayout['sizingH'] = 'HUG';
-                  childLayout['sizingV'] = 'FILL';
+                  childLayout['sizingV'] = 'HUG';
                 }
-              } else if (flex > 0) {
-                // Flexible (loose)
-                childLayout['flexGrow'] = flex;
-                childLayout['sizingH'] = 'HUG';
-                childLayout['sizingV'] = 'HUG';
               } else {
-                // 일반 자식
                 childLayout['flexGrow'] = 0;
                 childLayout['sizingH'] = 'HUG';
                 childLayout['sizingV'] = 'HUG';
               }
-            } else {
-              childLayout['flexGrow'] = 0;
-              childLayout['sizingH'] = 'HUG';
-              childLayout['sizingV'] = 'HUG';
+
+              // crossAxisAlignment == stretch → cross축 FILL
+              if (flexNode.crossAxisAlignment == CrossAxisAlignment.stretch) {
+                if (isHorizontal) {
+                  childLayout['sizingV'] = 'FILL';
+                  childLayout['alignSelf'] = 'STRETCH';
+                } else {
+                  childLayout['sizingH'] = 'FILL';
+                  childLayout['alignSelf'] = 'STRETCH';
+                }
+              }
+
+              c['childLayout'] = childLayout;
+
+              // itemSpacing 계산용 좌표 수집
+              try {
+                final childOffset = child.localToGlobal(Offset.zero);
+                if (isHorizontal) {
+                  _childMainAxisPositions.add(childOffset.dx);
+                } else {
+                  _childMainAxisPositions.add(childOffset.dy);
+                }
+              } catch (_) {}
             }
 
-            // crossAxisAlignment == stretch → cross축 FILL
-            if (flexNode.crossAxisAlignment == CrossAxisAlignment.stretch) {
-              if (isHorizontal) {
-                childLayout['sizingV'] = 'FILL';
-                childLayout['alignSelf'] = 'STRETCH';
-              } else {
-                childLayout['sizingH'] = 'FILL';
-                childLayout['alignSelf'] = 'STRETCH';
+            // Stack 자식: positioned 정보 추출
+            if (isStack) {
+              final childLayout =
+                  c['childLayout'] as Map<String, dynamic>? ?? {};
+              final parentData = child.parentData;
+              if (parentData is StackParentData) {
+                final pos = <String, dynamic>{};
+                if (parentData.top != null) pos['top'] = parentData.top;
+                if (parentData.left != null) pos['left'] = parentData.left;
+                if (parentData.right != null) pos['right'] = parentData.right;
+                if (parentData.bottom != null)
+                  pos['bottom'] = parentData.bottom;
+                if (pos.isNotEmpty) {
+                  childLayout['positioned'] = pos;
+                }
               }
+              childLayout['sizingH'] = 'FIXED';
+              childLayout['sizingV'] = 'FIXED';
+              c['childLayout'] = childLayout;
             }
 
-            c['childLayout'] = childLayout;
-
-            // itemSpacing 계산용 좌표 수집
-            try {
-              final childOffset = child.localToGlobal(Offset.zero);
-              if (isHorizontal) {
-                _childMainAxisPositions.add(childOffset.dx);
-              } else {
-                _childMainAxisPositions.add(childOffset.dy);
-              }
-            } catch (_) {}
+            children.add(c);
           }
-
-          // Stack 자식: positioned 정보 추출
-          if (isStack) {
-            final childLayout = c['childLayout'] as Map<String, dynamic>? ?? {};
-            final parentData = child.parentData;
-            if (parentData is StackParentData) {
-              final pos = <String, dynamic>{};
-              if (parentData.top != null) pos['top'] = parentData.top;
-              if (parentData.left != null) pos['left'] = parentData.left;
-              if (parentData.right != null) pos['right'] = parentData.right;
-              if (parentData.bottom != null) pos['bottom'] = parentData.bottom;
-              if (pos.isNotEmpty) {
-                childLayout['positioned'] = pos;
-              }
-            }
-            childLayout['sizingH'] = 'FIXED';
-            childLayout['sizingV'] = 'FIXED';
-            c['childLayout'] = childLayout;
+        } else {
+          // SliverPadding 감지 → padding + layout 설정
+          _extractSliverPadding(child, containerLayout);
+          if (containerLayout.containsKey('padding') && layoutMode == 'NONE') {
+            layoutMode = 'COLUMN';
+            isLayoutNode = true;
+            containerLayout['crossAxisAlignment'] = 'stretch';
+            containerLayout['mainAxisAlignment'] = 'start';
           }
-
-          children.add(c);
+          children.addAll(_crawlThroughSliver(child));
         }
-      } else {
-        // SliverPadding 감지 → padding + layout 설정
-        _extractSliverPadding(child, containerLayout);
-        if (containerLayout.containsKey('padding') && layoutMode == 'NONE') {
-          layoutMode = 'COLUMN';
-          isLayoutNode = true;
-          containerLayout['crossAxisAlignment'] = 'stretch';
-          containerLayout['mainAxisAlignment'] = 'start';
-        }
-        children.addAll(_crawlThroughSliver(child));
-      }
-    });
+      });
   } catch (_) {}
 
   // CustomMultiChildLayout: 자식을 위치 기준으로 정렬
@@ -1148,7 +1309,8 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     if (textKids.length >= 2) {
       final first = textKids.first; // 실텍스트 (RenderEditable)
       final second = textKids.last; // hint (RenderParagraph)
-      final firstContent = ((first['visual'] as Map?)?['content'] as String?) ?? '';
+      final firstContent =
+          ((first['visual'] as Map?)?['content'] as String?) ?? '';
       if (firstContent.isNotEmpty) {
         // 실텍스트 있음 → hint 제거
         children.remove(second);
@@ -1392,7 +1554,8 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         'h': node.size.height,
       };
       // widgetName 전파 (merge 시 소실 방지)
-      if (_widgetNameByRenderObject.containsKey(node) && !child.containsKey('widgetName')) {
+      if (_widgetNameByRenderObject.containsKey(node) &&
+          !child.containsKey('widgetName')) {
         child['widgetName'] = _widgetNameByRenderObject[node];
       }
       return child;
@@ -1479,6 +1642,7 @@ String figmaExtractorEntryPoint() {
     _designInfoByRenderObject.clear();
     _svgBoxTargets.clear();
     _widgetNameByRenderObject.clear();
+    _customPaintCaptures.clear();
 
     final rootElement = WidgetsBinding.instance.renderViewElement;
     if (rootElement != null) {
@@ -1546,13 +1710,24 @@ String figmaExtractorEntryPoint() {
 
 Future<String> _figmaExportWithImagesAsync() async {
   _imageDataByNode.clear();
+  _customPaintCaptures.clear();
+
+  // Phase 0: Element tree 순회 → _customPaintCaptures 등록 (pre-capture에 필요)
+  final rootElement = WidgetsBinding.instance.renderViewElement;
+  if (rootElement != null) {
+    try {
+      rootElement.visitChildren(_collectDesignInfoFromElements);
+    } catch (_) {}
+  }
 
   final root = RendererBinding.instance.renderView;
 
-  // Phase 1: async pre-capture
+  // Phase 1: async pre-capture (_customPaintCaptures가 이미 채워진 상태)
   await _preCaptureImages(root);
 
   // Phase 2: 기존 sync 크롤 (figmaExtractorEntryPoint 재사용)
+  // Note: figmaExtractorEntryPoint 내부에서 _customPaintCaptures를 다시 채우지만,
+  //       _imageDataByNode는 유지되므로 캡처 이미지가 정상 사용됨
   final result = figmaExtractorEntryPoint();
 
   _imageDataByNode.clear(); // 메모리 해제
@@ -1563,13 +1738,15 @@ Future<String> _figmaExportWithImagesAsync() async {
 void figmaStartExportWithImages() {
   _asyncExportBusy = true;
   _asyncExportResult = null;
-  _figmaExportWithImagesAsync().then((r) {
-    _asyncExportResult = r;
-    _asyncExportBusy = false;
-  }).catchError((e) {
-    _asyncExportResult = '{"error":"$e"}';
-    _asyncExportBusy = false;
-  });
+  _figmaExportWithImagesAsync()
+      .then((r) {
+        _asyncExportResult = r;
+        _asyncExportBusy = false;
+      })
+      .catchError((e) {
+        _asyncExportResult = '{"error":"$e"}';
+        _asyncExportBusy = false;
+      });
 }
 
 /// CLI에서 폴링: evaluate('figmaGetExportResult()')
