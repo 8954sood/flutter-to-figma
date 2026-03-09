@@ -1319,6 +1319,13 @@ function applyTextProps(textNode, props) {
     }
   }
 
+  if (props.lineHeightMultiplier != null && props.fontSize) {
+    var lh = Number(props.lineHeightMultiplier) * Number(props.fontSize);
+    if (!isNaN(lh) && lh > 0) {
+      textNode.lineHeight = { value: lh, unit: "PIXELS" };
+    }
+  }
+
   if (props.textAlign) {
     textNode.textAlignHorizontal = mapTextAlign(props.textAlign);
   }

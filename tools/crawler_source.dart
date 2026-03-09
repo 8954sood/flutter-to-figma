@@ -434,6 +434,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           visual['fontWeight'] = style.fontWeight.toString();
           visual['color'] = _colorToHex(style.color);
           visual['letterSpacing'] = style.letterSpacing;
+          if (style.height != null) {
+            visual['lineHeightMultiplier'] = style.height;
+          }
         }
       } catch (_) {}
     }
