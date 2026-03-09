@@ -92,8 +92,16 @@ function normalizeSchemaV2(node) {
       if (vv.width) props.borderWidth = vv.width;
     } else if (vk === "borderRadius" && vv != null) {
       props.borderRadius = String(vv);
-    } else if (vk === "shadow" && vv && vv.elevation) {
-      props.elevation = vv.elevation;
+    } else if (vk === "shadow" && vv && typeof vv === "object") {
+      if (vv.color != null) {
+        props.shadowColor = vv.color;
+        props.shadowOffsetX = vv.offsetX || 0;
+        props.shadowOffsetY = vv.offsetY || 0;
+        props.shadowBlurRadius = vv.blurRadius || 0;
+        props.shadowSpreadRadius = vv.spreadRadius || 0;
+      } else if (vv.elevation) {
+        props.elevation = vv.elevation;
+      }
     } else if (vv != null && !(vk in props)) {
       // 나머지 (backgroundColor, content, fontFamily, fontSize, color, letterSpacing, textAlign, isIconBox, ...) 직접 복사
       props[vk] = vv;
@@ -225,7 +233,7 @@ function mergeWrapperChains(node) {
     var next = current.children[0];
     var np = next.properties || {};
     if (np.backgroundColor || np.hasBorder || np.borderRadius ||
-        np.elevation || np.isIconBox || np.isSvgBox) break;
+        np.elevation || np.shadowColor || np.isIconBox || np.isSvgBox) break;
     current = next;
     chain.push(current);
   }
@@ -356,6 +364,9 @@ function inferMissingLayout(node) {
       }
       node.properties = props;
     }
+
+    // layoutWrap (Wrap 위젯)은 이미 올바른 순서로 크롤링됨 → 재정렬 금지
+    if (props.layoutWrap) return;
 
     // layoutMode에 맞게 자식 정렬 (기존 layoutMode가 있든 새로 추론했든)
     var mode = props.layoutMode;
@@ -893,7 +904,18 @@ function applyVisualProps(frame, props) {
   }
 
   // Shadow
-  if (props.elevation && typeof props.elevation === "number" && props.elevation > 0) {
+  if (props.shadowColor) {
+    var sc = parseFlutterColor(props.shadowColor);
+    frame.effects = [{
+      type: "DROP_SHADOW",
+      color: { r: sc.r, g: sc.g, b: sc.b, a: sc.a },
+      offset: { x: props.shadowOffsetX || 0, y: props.shadowOffsetY || 0 },
+      radius: props.shadowBlurRadius || 0,
+      spread: props.shadowSpreadRadius || 0,
+      visible: true,
+      blendMode: "NORMAL",
+    }];
+  } else if (props.elevation && typeof props.elevation === "number" && props.elevation > 0) {
     var elev = props.elevation;
     frame.effects = [{
       type: "DROP_SHADOW",

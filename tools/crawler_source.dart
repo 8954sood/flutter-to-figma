@@ -222,7 +222,7 @@ double? _parseBorderRadius(dynamic br) {
   if (br == null) return null;
   final s = br.toString();
   if (s.contains('zero')) return 0.0;
-  final m = RegExp(r'[\d.]+').firstMatch(s);
+  final m = RegExp(r'\d+\.?\d*').firstMatch(s);
   if (m != null) return double.tryParse(m.group(0)!);
   return double.tryParse(s);
 }
@@ -232,6 +232,7 @@ bool _hasVisualProps(Map<String, dynamic> visual) {
   return visual['backgroundColor'] != null ||
       (visual['border'] != null) ||
       (visual['shadow'] != null) ||
+      visual['borderRadius'] != null ||
       visual['isIconBox'] == true ||
       visual['isSvgBox'] == true ||
       visual['isTextField'] == true ||
@@ -488,12 +489,17 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           'h': node.size.height,
         };
         // Tight constraints (양축 고정 크기) → fixedSize 마킹
+        // 렌더 크기 ≈ 제약 크기일 때만 fixedSize (Expanded 안 SizedBox 제외)
         final ac = node.additionalConstraints;
         if (ac.hasTightWidth && ac.maxWidth.isFinite &&
             ac.hasTightHeight && ac.maxHeight.isFinite) {
-          final cl = childResult['childLayout'] as Map<String, dynamic>? ?? {};
-          cl['fixedSize'] = true;
-          childResult['childLayout'] = cl;
+          final widthMatch = (node.size.width - ac.maxWidth).abs() < 1.0;
+          final heightMatch = (node.size.height - ac.maxHeight).abs() < 1.0;
+          if (widthMatch && heightMatch) {
+            final cl = childResult['childLayout'] as Map<String, dynamic>? ?? {};
+            cl['fixedSize'] = true;
+            childResult['childLayout'] = cl;
+          }
         }
         return childResult;
       }
@@ -590,7 +596,14 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           if (br != null) visual['borderRadius'] = br;
         }
         if (decoration.boxShadow != null && decoration.boxShadow!.isNotEmpty) {
-          visual['shadow'] = {'elevation': 2.0};
+          final s = decoration.boxShadow!.first;
+          visual['shadow'] = {
+            'color': _colorToHex(s.color),
+            'offsetX': s.offset.dx,
+            'offsetY': s.offset.dy,
+            'blurRadius': s.blurRadius,
+            'spreadRadius': s.spreadRadius,
+          };
           hasVisual = true;
         }
       }
@@ -642,6 +655,38 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         }
       }
     } catch (_) {}
+  }
+  // ---------------------------------------------------
+  // [8.5] RenderClipRRect
+  // ---------------------------------------------------
+  else if (node is RenderClipRRect) {
+    final br = _parseBorderRadius(node.borderRadius);
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        if (br != null && br > 0) {
+          final childVisual = childResult['visual'] as Map<String, dynamic>? ?? {};
+          if (!childVisual.containsKey('borderRadius')) {
+            childVisual['borderRadius'] = br;
+            childResult['visual'] = childVisual;
+          }
+        }
+        childResult['rect'] = {
+          'x': offset.dx, 'y': offset.dy,
+          'w': node.size.width, 'h': node.size.height,
+        };
+        return childResult;
+      }
+    }
+    type = 'Frame';
+    layoutMode = 'NONE';
+    if (br != null && br > 0) visual['borderRadius'] = br;
   }
   // ---------------------------------------------------
   // [9] Picture / CustomPaint
