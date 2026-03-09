@@ -210,6 +210,36 @@ void _collectDesignInfoFromElements(Element element) {
     }
   }
 
+  // Material 위젯 (OutlinedButton, ElevatedButton 등의 보더)
+  // _ShapeBorderPaint(CustomPaint)로 그려지는 보더는 render tree에서 추출 불가
+  // → element tree에서 Material.shape.side를 직접 추출
+  if (widget is Material && widget.shape != null) {
+    final shape = widget.shape;
+    if (shape is OutlinedBorder) {
+      final side = shape.side;
+      if (side.width > 0 && side.style == BorderStyle.solid) {
+        double? radius;
+        if (shape is RoundedRectangleBorder) {
+          final br = shape.borderRadius;
+          if (br is BorderRadius) {
+            radius = br.topLeft.x;
+          }
+        }
+        final ro = element.renderObject;
+        if (ro != null) {
+          // 기존 DesignInfo가 있으면 덮어쓰지 않고, 없을 때만 등록
+          if (!_designInfoByRenderObject.containsKey(ro)) {
+            _designInfoByRenderObject[ro] = DesignInfo(
+              borderColor: side.color,
+              borderWidth: side.width,
+              borderRadius: radius,
+            );
+          }
+        }
+      }
+    }
+  }
+
   element.visitChildren(_collectDesignInfoFromElements);
 }
 
@@ -657,6 +687,58 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           hasVisual = true;
         }
       }
+      // ShapeDecoration (Material 버튼: OutlinedButton, ElevatedButton 등)
+      else if (decoration is ShapeDecoration) {
+        if (decoration.color != null) {
+          visual['backgroundColor'] = _colorToHex(decoration.color);
+          hasVisual = true;
+        }
+        final shape = decoration.shape;
+        if (shape is RoundedRectangleBorder) {
+          final side = shape.side;
+          if (side.width > 0 && side.style == BorderStyle.solid) {
+            visual['border'] = {
+              'color': _colorToHex(side.color),
+              'width': side.width,
+            };
+            hasVisual = true;
+          }
+          final br = _parseBorderRadius(shape.borderRadius);
+          if (br != null) visual['borderRadius'] = br;
+        } else if (shape is StadiumBorder) {
+          final side = shape.side;
+          if (side.width > 0 && side.style == BorderStyle.solid) {
+            visual['border'] = {
+              'color': _colorToHex(side.color),
+              'width': side.width,
+            };
+            hasVisual = true;
+          }
+          // StadiumBorder → borderRadius = height / 2
+          visual['borderRadius'] = node.size.height / 2;
+        } else if (shape is CircleBorder) {
+          final side = shape.side;
+          if (side.width > 0 && side.style == BorderStyle.solid) {
+            visual['border'] = {
+              'color': _colorToHex(side.color),
+              'width': side.width,
+            };
+            hasVisual = true;
+          }
+          visual['borderRadius'] = node.size.shortestSide / 2;
+        }
+        if (decoration.shadows != null && decoration.shadows!.isNotEmpty) {
+          final s = decoration.shadows!.first;
+          visual['shadow'] = {
+            'color': _colorToHex(s.color),
+            'offsetX': s.offset.dx,
+            'offsetY': s.offset.dy,
+            'blurRadius': s.blurRadius,
+            'spreadRadius': s.spreadRadius,
+          };
+          hasVisual = true;
+        }
+      }
     } catch (_) {}
   }
   // ---------------------------------------------------
@@ -703,6 +785,16 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         if (m != null) {
           visual['borderRadius'] = double.tryParse(m.group(1)!) ?? 0.0;
         }
+        // shape.side → border (OutlinedButton 등 Material 버튼의 보더)
+        try {
+          final side = shape.side;
+          if (side != null && side.width > 0 && side.style == BorderStyle.solid) {
+            visual['border'] = {
+              'color': _colorToHex(side.color),
+              'width': side.width,
+            };
+          }
+        } catch (_) {}
       }
     } catch (_) {}
   }

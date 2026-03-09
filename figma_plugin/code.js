@@ -241,6 +241,12 @@ function mergeWrapperChains(node) {
     var np = next.properties || {};
     if (np.backgroundColor || np.hasBorder || np.borderRadius ||
         np.elevation || np.shadowColor || np.isIconBox || np.isSvgBox) break;
+    // 센터링/끝정렬 컨테이너 보존: current가 공간을 채우고(mainAxisSize=max)
+    // 자식을 center/end로 배치하면 → 병합 시 정렬 소실 방지
+    var cp = current.properties || {};
+    if (cp.mainAxisSize === "FIXED" &&
+        (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
+         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) break;
     current = next;
     chain.push(current);
   }
