@@ -27,6 +27,10 @@ class DesignInfo {
   final double? elevation;
   final bool isTextField;
   final bool isDivider;
+  final double? borderTopWidth;
+  final double? borderRightWidth;
+  final double? borderBottomWidth;
+  final double? borderLeftWidth;
 
   DesignInfo({
     this.backgroundColor,
@@ -36,6 +40,10 @@ class DesignInfo {
     this.elevation,
     this.isTextField = false,
     this.isDivider = false,
+    this.borderTopWidth,
+    this.borderRightWidth,
+    this.borderBottomWidth,
+    this.borderLeftWidth,
   });
 }
 
@@ -178,14 +186,28 @@ void _collectDesignInfoFromElements(Element element) {
     Color? borderColor;
     double? borderWidth;
     double? radius;
+    double? borderTopW, borderRightW, borderBottomW, borderLeftW;
 
     if (deco is BoxDecoration) {
       bg = deco.color;
       final border = deco.border;
       if (border is Border) {
-        final side = border.top;
-        borderColor = side.color;
-        borderWidth = side.width;
+        final sides = [border.top, border.right, border.bottom, border.left];
+        BorderSide? best;
+        for (final s in sides) {
+          if (best == null || s.width > best.width) best = s;
+        }
+        if (best != null && best.width > 0) {
+          borderColor = best.color;
+          borderWidth = best.width;
+        }
+        final uniform = sides.every((s) => s.width == sides[0].width && s.color == sides[0].color);
+        if (!uniform) {
+          borderTopW = border.top.width;
+          borderRightW = border.right.width;
+          borderBottomW = border.bottom.width;
+          borderLeftW = border.left.width;
+        }
       }
       final br = deco.borderRadius;
       if (br is BorderRadius) {
@@ -200,6 +222,10 @@ void _collectDesignInfoFromElements(Element element) {
         borderColor: borderColor,
         borderWidth: borderWidth,
         borderRadius: radius,
+        borderTopWidth: borderTopW,
+        borderRightWidth: borderRightW,
+        borderBottomWidth: borderBottomW,
+        borderLeftWidth: borderLeftW,
       );
     }
   }
@@ -657,24 +683,26 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         if (decoration.border != null) {
           final border = decoration.border;
           if (border is Border) {
-            final sides = [
-              border.top,
-              border.right,
-              border.bottom,
-              border.left,
-            ];
+            final top = border.top, right = border.right,
+                  bottom = border.bottom, left = border.left;
+            final sides = [top, right, bottom, left];
             BorderSide? bestSide;
-            for (final side in sides) {
-              if (side.width > 0) {
-                bestSide = side;
-                break;
-              }
+            for (final s in sides) {
+              if (bestSide == null || s.width > bestSide.width) bestSide = s;
             }
-            if (bestSide != null) {
-              visual['border'] = {
+            if (bestSide != null && bestSide.width > 0) {
+              final borderMap = <String, dynamic>{
                 'color': _colorToHex(bestSide.color),
                 'width': bestSide.width,
               };
+              final uniform = sides.every((s) => s.width == top.width && s.color == top.color);
+              if (!uniform) {
+                borderMap['topWidth'] = top.width;
+                borderMap['rightWidth'] = right.width;
+                borderMap['bottomWidth'] = bottom.width;
+                borderMap['leftWidth'] = left.width;
+              }
+              visual['border'] = borderMap;
               hasVisual = true;
             }
           } else {
@@ -906,10 +934,17 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       hasVisual = true;
     }
     if (designInfo.borderColor != null) {
-      visual['border'] = {
+      final borderMap = <String, dynamic>{
         'color': _colorToHex(designInfo.borderColor),
         'width': designInfo.borderWidth ?? 1.0,
       };
+      if (designInfo.borderTopWidth != null) {
+        borderMap['topWidth'] = designInfo.borderTopWidth;
+        borderMap['rightWidth'] = designInfo.borderRightWidth;
+        borderMap['bottomWidth'] = designInfo.borderBottomWidth;
+        borderMap['leftWidth'] = designInfo.borderLeftWidth;
+      }
+      visual['border'] = borderMap;
       hasVisual = true;
     }
     if (designInfo.borderRadius != null) {

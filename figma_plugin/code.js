@@ -86,10 +86,16 @@ function normalizeSchemaV2(node) {
     var vk = visualKeys[vi];
     var vv = visual[vk];
     if (vk === "border" && vv && typeof vv === "object") {
-      // border: {color, width} → hasBorder, borderColor, borderWidth
+      // border: {color, width, topWidth?, rightWidth?, bottomWidth?, leftWidth?} → hasBorder, borderColor, borderWidth, per-side
       props.hasBorder = true;
       if (vv.color) props.borderColor = vv.color;
       if (vv.width) props.borderWidth = vv.width;
+      if (vv.topWidth != null) {
+        props.borderTopWidth = vv.topWidth;
+        props.borderRightWidth = vv.rightWidth;
+        props.borderBottomWidth = vv.bottomWidth;
+        props.borderLeftWidth = vv.leftWidth;
+      }
     } else if (vk === "borderRadius" && vv != null) {
       props.borderRadius = String(vv);
     } else if (vk === "shadow" && vv && typeof vv === "object") {
@@ -433,7 +439,8 @@ function mergePropsInto(target, source, isOutermost) {
       }
       continue;
     }
-    if (key === "hasBorder" || key === "borderWidth" || key === "borderColor" || key === "borderRadius") {
+    if (key === "hasBorder" || key === "borderWidth" || key === "borderColor" || key === "borderRadius" ||
+        key === "borderTopWidth" || key === "borderRightWidth" || key === "borderBottomWidth" || key === "borderLeftWidth") {
       if (!(key in target)) target[key] = val;
       continue;
     }
@@ -1112,7 +1119,14 @@ function applyVisualProps(frame, props) {
       color: { r: bc.r, g: bc.g, b: bc.b },
       opacity: bc.a,
     }];
-    frame.strokeWeight = typeof props.borderWidth === "number" ? props.borderWidth : 1;
+    if (props.borderTopWidth != null) {
+      frame.strokeTopWeight = props.borderTopWidth;
+      frame.strokeRightWeight = props.borderRightWidth;
+      frame.strokeBottomWeight = props.borderBottomWidth;
+      frame.strokeLeftWeight = props.borderLeftWidth;
+    } else {
+      frame.strokeWeight = typeof props.borderWidth === "number" ? props.borderWidth : 1;
+    }
   } else {
     frame.strokes = [];
   }
