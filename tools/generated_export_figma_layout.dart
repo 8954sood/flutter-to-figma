@@ -293,11 +293,15 @@ void _collectDesignInfoFromElements(Element element) {
   const namedWidgets = {
     'NavigationToolbar',
     'BottomNavigationBar',
+    'Scaffold',
   };
   if (namedWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
     if (ro != null) {
       _widgetNameByRenderObject[ro] = widgetTypeName;
+      print('[TAG] $widgetTypeName → RO: ${ro.runtimeType} hashCode=${ro.hashCode}');
+    } else {
+      print('[TAG] $widgetTypeName → renderObject is NULL');
     }
   }
 
@@ -1347,6 +1351,14 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         'w': node.size.width,
         'h': node.size.height,
       };
+      // widgetName 전파 (merge 시 소실 방지)
+      if (_widgetNameByRenderObject.containsKey(node)) {
+        final wn = _widgetNameByRenderObject[node];
+        print('[MERGE] widgetName=$wn merged into child, child already has=${child['widgetName']}');
+        if (!child.containsKey('widgetName')) {
+          child['widgetName'] = wn;
+        }
+      }
       return child;
     }
   }
@@ -1394,7 +1406,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   };
   if (containerLayout.isNotEmpty) result['containerLayout'] = containerLayout;
   if (_widgetNameByRenderObject.containsKey(node)) {
-    result['widgetName'] = _widgetNameByRenderObject[node];
+    final wn = _widgetNameByRenderObject[node];
+    result['widgetName'] = wn;
+    print('[CRAWL-WN] widgetName=$wn on ${node.runtimeType} hashCode=${node.hashCode} layoutMode=$layoutMode children=${children.length}');
   }
   // childLayout은 부모가 설정 (위에서 이미 설정됨)
   return result;
@@ -1404,32 +1418,47 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
 /// 4. 겹친 화면 제거
 /// =======================================================
 
-List<Map<String, dynamic>> _filterOverlappingScreens(
-  List<Map<String, dynamic>> items,
-  ui.Size screenSize,
-) {
-  if (items.isEmpty) return items;
-  List<int> fullScreenIndices = [];
-  for (int i = 0; i < items.length; i++) {
-    final rect = items[i]['rect'];
-    if (rect != null) {
-      double w = (rect['w'] as num?)?.toDouble() ?? 0.0;
-      double h = (rect['h'] as num?)?.toDouble() ?? 0.0;
-      if (w >= screenSize.width * 0.8 && h >= screenSize.height * 0.8) {
-        fullScreenIndices.add(i);
-      }
+/// 재귀적으로 Scaffold를 찾아 마지막 것만 남긴다.
+/// Navigator 스택에 여러 페이지가 쌓여 있을 때,
+/// 최상위(마지막) Scaffold만 보존.
+Map<String, dynamic> _keepLastScaffold(Map<String, dynamic> root) {
+  final children = root['children'] as List<Map<String, dynamic>>?;
+  if (children == null || children.isEmpty) return root;
+
+  // 현재 레벨에서 Scaffold 찾기
+  final scaffoldIndices = <int>[];
+  for (int i = 0; i < children.length; i++) {
+    if (_containsScaffold(children[i])) {
+      scaffoldIndices.add(i);
     }
   }
-  if (fullScreenIndices.length > 1) {
-    int topMostIndex = fullScreenIndices.last;
-    List<Map<String, dynamic>> result = [];
-    for (int i = 0; i < items.length; i++) {
-      if (fullScreenIndices.contains(i) && i != topMostIndex) continue;
-      result.add(items[i]);
+
+  if (scaffoldIndices.length > 1) {
+    // 마지막 Scaffold가 있는 자식만 남기고 나머지 Scaffold 자식 제거
+    final lastIdx = scaffoldIndices.last;
+    final filtered = <Map<String, dynamic>>[];
+    for (int i = 0; i < children.length; i++) {
+      if (scaffoldIndices.contains(i) && i != lastIdx) continue;
+      filtered.add(children[i]);
     }
-    return result;
+    root['children'] = filtered;
+  } else {
+    // 이 레벨에 Scaffold가 0~1개면 자식으로 재귀
+    for (final child in children) {
+      _keepLastScaffold(child);
+    }
   }
-  return items;
+  return root;
+}
+
+bool _containsScaffold(Map<String, dynamic> node) {
+  if (node['widgetName'] == 'Scaffold') return true;
+  final children = node['children'] as List?;
+  if (children == null) return false;
+  for (final child in children) {
+    if (child is Map<String, dynamic> && _containsScaffold(child)) return true;
+  }
+  return false;
 }
 
 /// =======================================================
@@ -1471,12 +1500,7 @@ String figmaExtractorEntryPoint() {
       maxHeight > 0 ? maxHeight : 844.0,
     );
 
-    final filteredChildren = _filterOverlappingScreens(
-      rootChildren,
-      screenSize,
-    );
-
-    final data = {
+    final data = <String, dynamic>{
       'type': 'Frame',
       'name': 'Flutter Screen',
       'layoutMode': 'COLUMN',
@@ -1494,8 +1518,10 @@ String figmaExtractorEntryPoint() {
         'itemSpacing': 0.0,
         'padding': {'top': 0.0, 'right': 0.0, 'bottom': 0.0, 'left': 0.0},
       },
-      'children': filteredChildren,
+      'children': rootChildren,
     };
+
+    _keepLastScaffold(data);
 
     final result = jsonEncode(data);
     debugPrint('[FigmaCrawler] ===== DONE (${result.length} chars) =====');
