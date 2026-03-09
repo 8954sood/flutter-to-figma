@@ -63,6 +63,7 @@ class DesignInfo {
 final Map<RenderObject, DesignInfo> _designInfoByRenderObject = {};
 final Set<RenderObject> _svgBoxTargets = {};
 final Map<RenderObject, String> _imageDataByNode = {};
+final Map<RenderObject, String> _widgetNameByRenderObject = {};
 String? _asyncExportResult;
 bool _asyncExportBusy = false;
 
@@ -258,6 +259,19 @@ void _collectDesignInfoFromElements(Element element) {
           }
         }
       }
+    }
+  }
+
+  // 전용 위젯 이름 태깅
+  final widgetTypeName = widget.runtimeType.toString();
+  const namedWidgets = {
+    'NavigationToolbar',
+    'BottomNavigationBar',
+  };
+  if (namedWidgets.contains(widgetTypeName)) {
+    final ro = element.renderObject;
+    if (ro != null) {
+      _widgetNameByRenderObject[ro] = widgetTypeName;
     }
   }
 
@@ -1062,35 +1076,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     }
   }
 
-  // AppBar 패턴: ROW + 3자식 → leading(FILL) + title(HUG) + action(FILL)
-  // 타이틀이 항상 정중앙에 오도록 leading/action이 남은 공간을 균등 분할
-  if (isCustomMultiChild && layoutMode == 'ROW' && children.length == 3) {
-    // leading (첫 번째) → FILL, 내용 왼쪽 정렬
-    final leadCl = children[0]['childLayout'] as Map<String, dynamic>? ?? {};
-    leadCl['flexGrow'] = 1;
-    leadCl['sizingH'] = 'FILL';
-    children[0]['childLayout'] = leadCl;
-
-    // title (가운데) → flexGrow 0 (자연 크기)
-    final titleCl = children[1]['childLayout'] as Map<String, dynamic>? ?? {};
-    titleCl['flexGrow'] = 0;
-    children[1]['childLayout'] = titleCl;
-
-    // action (마지막) → FILL, 내용 오른쪽 정렬
-    final actionCl = children[2]['childLayout'] as Map<String, dynamic>? ?? {};
-    actionCl['flexGrow'] = 1;
-    actionCl['sizingH'] = 'FILL';
-    children[2]['childLayout'] = actionCl;
-
-    // action 프레임 내부 정렬을 end로 변경
-    final actionContainer = children[2]['containerLayout'] as Map<String, dynamic>? ?? {};
-    actionContainer['mainAxisAlignment'] = 'end';
-    children[2]['containerLayout'] = actionContainer;
-
-    // spaceBetween → center (FILL이 공간 분배를 담당)
-    containerLayout['mainAxisAlignment'] = 'center';
-  }
-
   // ---------------------------------------------------
   // [10.5] TextField 구조 재편: bg를 입력 영역에만, 패딩 적용
   // ---------------------------------------------------
@@ -1370,6 +1355,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     'children': children,
   };
   if (containerLayout.isNotEmpty) result['containerLayout'] = containerLayout;
+  if (_widgetNameByRenderObject.containsKey(node)) {
+    result['widgetName'] = _widgetNameByRenderObject[node];
+  }
   // childLayout은 부모가 설정 (위에서 이미 설정됨)
   return result;
 }
@@ -1415,6 +1403,7 @@ String figmaExtractorEntryPoint() {
     debugPrint('[FigmaCrawler] ===== START (v2) =====');
     _designInfoByRenderObject.clear();
     _svgBoxTargets.clear();
+    _widgetNameByRenderObject.clear();
 
     final rootElement = WidgetsBinding.instance.renderViewElement;
     if (rootElement != null) {

@@ -192,6 +192,10 @@ function flattenEmptyWrappers(node) {
     if (!child.rect && node.rect) {
       child.rect = node.rect;
     }
+    // widgetName 전파
+    if (node.widgetName && !child.widgetName) {
+      child.widgetName = node.widgetName;
+    }
     return child;
   }
 
@@ -212,6 +216,150 @@ function flattenEmptyWrappers(node) {
   // 빈 프로퍼티 + 자식 여러개 → 유지, 레이아웃 추론 필요 표시
   node._needsLayoutInference = true;
   return node;
+}
+
+// --- 1.1.5 preprocessNamedWidgets ---
+function preprocessNamedWidgets(node) {
+  if (!node || typeof node !== "object") return;
+
+  // 자식 먼저 재귀
+  var children = node.children || [];
+  for (var i = 0; i < children.length; i++) {
+    preprocessNamedWidgets(children[i]);
+  }
+
+  var wn = node.widgetName;
+  if (!wn) return;
+
+  if (wn === "NavigationToolbar") {
+    handleNavigationToolbar(node);
+  } else if (wn === "BottomNavigationBar") {
+    handleBottomNavigationBar(node);
+  }
+}
+
+// 자식 노드의 layoutMode에 따라 수평/수직 정렬 설정
+// hAlign: 수평 정렬 ("start"|"center"|"end")
+// vAlign: 수직 정렬 ("start"|"center"|"end")
+function applyAlignByLayoutDir(props, hAlign, vAlign) {
+  if (props.layoutMode === "VERTICAL") {
+    // VERTICAL: main=수직, cross=수평
+    props.mainAxisAlignment = vAlign;
+    props.crossAxisAlignment = hAlign;
+  } else {
+    // HORIZONTAL 또는 기타: main=수평, cross=수직
+    props.mainAxisAlignment = hAlign;
+    props.crossAxisAlignment = vAlign;
+  }
+}
+
+function handleNavigationToolbar(node) {
+  var children = node.children || [];
+  var props = node.properties || {};
+
+  // ROW 모드 보장 (normalizeSchemaV2 이후 flat properties)
+  props.layoutMode = "HORIZONTAL";
+  props.mainAxisAlignment = "center";
+  node.properties = props;
+
+  var nodeRect = node.rect || {};
+  var nodeH = nodeRect.h || 56;
+
+  if (children.length === 3) {
+    var c0rect = children[0].rect || {};
+    var c2rect = children[2].rect || {};
+
+    // leading → 래퍼로 감싸서 FILL + left + vcenter
+    var leadWrapper = {
+      type: "Frame",
+      rect: { x: c0rect.x || 0, y: nodeRect.y || 0, w: c0rect.w || 0, h: nodeH },
+      properties: {
+        layoutMode: "HORIZONTAL",
+        mainAxisAlignment: "start",
+        crossAxisAlignment: "center",
+        flexGrow: 1,
+        flexFit: "FlexFit.tight",
+      },
+      children: [children[0]],
+    };
+    children[0] = leadWrapper;
+
+    // title → HUG
+    var titleP = children[1].properties || {};
+    titleP.flexGrow = 0;
+    delete titleP.flexFit;
+    children[1].properties = titleP;
+
+    // actions → 래퍼로 감싸서 FILL + right + vcenter
+    // 원래 actions 노드는 자연 크기 유지 (터치 영역 보존)
+    var actWrapper = {
+      type: "Frame",
+      rect: { x: c2rect.x || 0, y: nodeRect.y || 0, w: c2rect.w || 0, h: nodeH },
+      properties: {
+        layoutMode: "HORIZONTAL",
+        mainAxisAlignment: "end",
+        crossAxisAlignment: "center",
+        flexGrow: 1,
+        flexFit: "FlexFit.tight",
+      },
+      children: [children[2]],
+    };
+    children[2] = actWrapper;
+  } else if (children.length === 2) {
+    var c0r = children[0].rect || {};
+    var c1r = children[1].rect || {};
+
+    // 첫 자식 → FILL + left + vcenter (래퍼)
+    var wrap0 = {
+      type: "Frame",
+      rect: { x: c0r.x || 0, y: nodeRect.y || 0, w: c0r.w || 0, h: nodeH },
+      properties: {
+        layoutMode: "HORIZONTAL",
+        mainAxisAlignment: "start",
+        crossAxisAlignment: "center",
+        flexGrow: 1,
+        flexFit: "FlexFit.tight",
+      },
+      children: [children[0]],
+    };
+    // 둘째 자식 → FILL + right + vcenter (래퍼)
+    var wrap1 = {
+      type: "Frame",
+      rect: { x: c1r.x || 0, y: nodeRect.y || 0, w: c1r.w || 0, h: nodeH },
+      properties: {
+        layoutMode: "HORIZONTAL",
+        mainAxisAlignment: "end",
+        crossAxisAlignment: "center",
+        flexGrow: 1,
+        flexFit: "FlexFit.tight",
+      },
+      children: [children[1]],
+    };
+    children[0] = wrap0;
+    children[1] = wrap1;
+  }
+}
+
+function handleBottomNavigationBar(node) {
+  var children = node.children || [];
+  var props = node.properties || {};
+
+  // ROW + spaceAround (normalizeSchemaV2 이후 flat properties)
+  props.layoutMode = "HORIZONTAL";
+  props.mainAxisAlignment = "spaceAround";
+  props.crossAxisAlignment = "center";
+  node.properties = props;
+
+  // 각 아이템 FILL + center
+  for (var i = 0; i < children.length; i++) {
+    var cp = children[i].properties || {};
+    cp.flexGrow = 1;
+    cp.flexFit = "FlexFit.tight";
+    delete cp.fixedWidth;
+    cp.crossAxisAlignment = "center";
+    cp.mainAxisAlignment = "center";
+    children[i].properties = cp;
+  }
 }
 
 // --- 1.2 mergeWrapperChains ---
@@ -241,6 +389,8 @@ function mergeWrapperChains(node) {
     var np = next.properties || {};
     if (np.backgroundColor || np.hasBorder || np.borderRadius ||
         np.elevation || np.shadowColor || np.isIconBox || np.isSvgBox) break;
+    // widgetName이 있는 노드는 병합 중단
+    if (next.widgetName) break;
     // 센터링/끝정렬 컨테이너 보존: current가 공간을 채우고(mainAxisSize=max)
     // 자식을 center/end로 배치하면 → 병합 시 정렬 소실 방지
     var cp = current.properties || {};
@@ -733,6 +883,7 @@ async function renderWholeLayout(root) {
   if (!screen) throw new Error("루트 노드가 전처리 중 제거되었습니다.");
 
   mergeWrapperChains(screen);
+  preprocessNamedWidgets(screen);
   inferMissingLayout(screen);
   convertSpacersToItemSpacing(screen);
   recalcItemSpacing(screen);
