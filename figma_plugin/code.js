@@ -142,6 +142,12 @@ function normalizeSchemaV2(node) {
   if (childLay.fixedSize) {
     props.fixedSize = true;
   }
+  if (childLay.fixedWidth) {
+    props.fixedWidth = true;
+  }
+  if (childLay.fixedHeight) {
+    props.fixedHeight = true;
+  }
 
   node.properties = props;
 
@@ -194,8 +200,9 @@ function flattenEmptyWrappers(node) {
     var rect = node.rect || {};
     var w = rect.w || 0;
     var h = rect.h || 0;
-    // 고스트 래퍼 제거: 한 축이라도 크거나, 양쪽 모두 0
-    if (w > 100 || h > 100 || (w === 0 && h === 0)) {
+    // 고스트 래퍼 제거: 양축 모두 크거나, 양쪽 모두 0
+    // (한 축만 큰 경우는 stretch된 스페이서 → 유지)
+    if ((w > 100 && h > 100) || (w < 1 && h < 1)) {
       return null;
     }
     // 양쪽 다 작고 하나 이상 > 0 = 스페이서 → 유지
@@ -582,6 +589,10 @@ function assignSizingHints(node, parentProps) {
     }
   }
 
+  // SizedBox 단축 고정: fixedWidth/fixedHeight가 있으면 해당 축 FIXED
+  if (props.fixedWidth) node._sizingH = "FIXED";
+  if (props.fixedHeight) node._sizingV = "FIXED";
+
   // 자식 재귀
   var children = node.children || [];
   for (var i = 0; i < children.length; i++) {
@@ -789,6 +800,7 @@ function renderNode(node, parentFigma, parentLayoutDir) {
       // --- Text 노드 ---
       figNode = figma.createText();
       applyTextProps(figNode, props);
+      figNode.resize(rw, rh);
     } else if (node.type === "Image") {
       // --- Image 노드 ---
       figNode = figma.createRectangle();
@@ -949,7 +961,9 @@ function applyBgColor(frame, props) {
 function applyAutoLayout(frame, props) {
   var mode = props.layoutMode;
   if (!mode) {
-    frame.layoutMode = "VERTICAL";
+    // layoutMode 없는 프레임(SizedBox 스페이서 등)은 auto-layout 없이 유지
+    // auto-layout 설정 시 빈 프레임이 0으로 축소될 수 있음
+    frame.layoutMode = "NONE";
     return;
   }
 

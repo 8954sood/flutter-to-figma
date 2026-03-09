@@ -486,6 +486,46 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     isLayoutNode = true;
   }
   // ---------------------------------------------------
+  // [3.5] RenderPositionedBox (Align / Center / Container.alignment)
+  // ---------------------------------------------------
+  else if (node is RenderPositionedBox) {
+    type = 'Frame';
+    isLayoutNode = true;
+    layoutMode = 'COLUMN';
+
+    final alignment = node.alignment;
+    Alignment resolved;
+    if (alignment is Alignment) {
+      resolved = alignment;
+    } else {
+      resolved = alignment.resolve(TextDirection.ltr);
+    }
+
+    // alignment.y → mainAxisAlignment (COLUMN = vertical)
+    String mainAlign;
+    if (resolved.y <= -0.5) {
+      mainAlign = 'start';
+    } else if (resolved.y >= 0.5) {
+      mainAlign = 'end';
+    } else {
+      mainAlign = 'center';
+    }
+
+    // alignment.x → crossAxisAlignment (COLUMN = horizontal)
+    String crossAlign;
+    if (resolved.x <= -0.5) {
+      crossAlign = 'start';
+    } else if (resolved.x >= 0.5) {
+      crossAlign = 'end';
+    } else {
+      crossAlign = 'center';
+    }
+
+    containerLayout['mainAxisAlignment'] = mainAlign;
+    containerLayout['crossAxisAlignment'] = crossAlign;
+    containerLayout['mainAxisSize'] = 'max';
+  }
+  // ---------------------------------------------------
   // [4] RenderConstrainedBox (SizedBox)
   // ---------------------------------------------------
   else if (node is RenderConstrainedBox) {
@@ -509,18 +549,28 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           'w': node.size.width,
           'h': node.size.height,
         };
-        // Tight constraints (양축 고정 크기) → fixedSize 마킹
-        // 렌더 크기 ≈ 제약 크기일 때만 fixedSize (Expanded 안 SizedBox 제외)
+        // Tight constraints → fixedSize / fixedWidth / fixedHeight 마킹
+        // 렌더 크기 ≈ 제약 크기일 때만 (Expanded 안 SizedBox 제외)
         final ac = node.additionalConstraints;
-        if (ac.hasTightWidth && ac.maxWidth.isFinite &&
-            ac.hasTightHeight && ac.maxHeight.isFinite) {
-          final widthMatch = (node.size.width - ac.maxWidth).abs() < 1.0;
-          final heightMatch = (node.size.height - ac.maxHeight).abs() < 1.0;
-          if (widthMatch && heightMatch) {
-            final cl = childResult['childLayout'] as Map<String, dynamic>? ?? {};
-            cl['fixedSize'] = true;
-            childResult['childLayout'] = cl;
+        final cl = childResult['childLayout'] as Map<String, dynamic>? ?? {};
+        bool marked = false;
+        if (ac.hasTightWidth && ac.maxWidth.isFinite) {
+          if ((node.size.width - ac.maxWidth).abs() < 1.0) {
+            cl['fixedWidth'] = true;
+            marked = true;
           }
+        }
+        if (ac.hasTightHeight && ac.maxHeight.isFinite) {
+          if ((node.size.height - ac.maxHeight).abs() < 1.0) {
+            cl['fixedHeight'] = true;
+            marked = true;
+          }
+        }
+        if (cl['fixedWidth'] == true && cl['fixedHeight'] == true) {
+          cl['fixedSize'] = true;
+        }
+        if (marked) {
+          childResult['childLayout'] = cl;
         }
         return childResult;
       }
