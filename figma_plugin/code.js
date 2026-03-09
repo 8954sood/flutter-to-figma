@@ -579,10 +579,11 @@ function assignSizingHints(node, parentProps) {
       }
 
       // mainAxisSize=AUTO → 주축 HUG
+      // 단, flexGrow(Expanded/Flexible)로 FILL이 설정된 축은 유지
       if (isAutoSize) {
-        if (props.layoutMode === "HORIZONTAL") {
+        if (props.layoutMode === "HORIZONTAL" && node._sizingH !== "FILL") {
           node._sizingH = "HUG";
-        } else if (props.layoutMode === "VERTICAL") {
+        } else if (props.layoutMode === "VERTICAL" && node._sizingV !== "FILL") {
           node._sizingV = "HUG";
         }
       }
@@ -590,8 +591,9 @@ function assignSizingHints(node, parentProps) {
   }
 
   // SizedBox 단축 고정: fixedWidth/fixedHeight가 있으면 해당 축 FIXED
-  if (props.fixedWidth) node._sizingH = "FIXED";
-  if (props.fixedHeight) node._sizingV = "FIXED";
+  // 단, 이미 FILL(Expanded/Flexible)이면 flex 우선 (AppBar leading 등)
+  if (props.fixedWidth && node._sizingH !== "FILL") node._sizingH = "FIXED";
+  if (props.fixedHeight && node._sizingV !== "FILL") node._sizingV = "FIXED";
 
   // 자식 재귀
   var children = node.children || [];
@@ -853,6 +855,55 @@ function renderNode(node, parentFigma, parentLayoutDir) {
 
   figNode.name = generateNodeName(node);
 
+  // flexGrow + fixedSize 충돌: mergeWrapperChains가 Expanded 프레임과 내부 아이콘 체인을 병합한 경우
+  // → wrapper ROW(FILL, align=END)를 만들고, 원본은 FIXED 자식으로 배치
+  if (props.flexGrow > 0 && props.fixedSize && node.type === "Frame") {
+    var wrapper = figma.createFrame();
+    wrapper.name = figNode.name + "_fill";
+    wrapper.resize(rw, rh);
+    wrapper.fills = [];
+    wrapper.clipsContent = false;
+    wrapper.layoutMode = "HORIZONTAL";
+    wrapper.primaryAxisAlignItems = "MAX";      // 오른쪽 끝 정렬
+    wrapper.counterAxisAlignItems = "CENTER";   // 수직 중앙
+    wrapper.paddingTop = 0;
+    wrapper.paddingRight = 0;
+    wrapper.paddingBottom = 0;
+    wrapper.paddingLeft = 0;
+    wrapper.itemSpacing = 0;
+
+    parentFigma.appendChild(wrapper);
+
+    // wrapper: FILL (flex 역할 대행)
+    try {
+      wrapper.layoutSizingHorizontal = "FILL";
+      wrapper.layoutSizingVertical = "FILL";
+      wrapper.layoutGrow = 1;
+    } catch (e) {}
+
+    // 원본 figNode: FIXED 크기로 wrapper 안에 배치
+    wrapper.appendChild(figNode);
+    try {
+      figNode.layoutSizingHorizontal = "FIXED";
+      figNode.layoutSizingVertical = "FIXED";
+      figNode.layoutGrow = 0;
+    } catch (e) {}
+
+    // 자식 재귀 (원본 figNode 안에)
+    if (!props.isIconBox && !props.isVectorCandidate) {
+      var children = node.children || [];
+      var childLayoutDir = props.layoutMode || "VERTICAL";
+      for (var i = 0; i < children.length; i++) {
+        try {
+          renderNode(children[i], figNode, childLayoutDir);
+        } catch (e) {
+          console.warn("[FlutterPlugin] 자식 렌더링 실패:", e);
+        }
+      }
+    }
+    return;
+  }
+
   // appendChild (sizing 전에 반드시)
   parentFigma.appendChild(figNode);
 
@@ -1014,8 +1065,10 @@ function applySizing(figNode, jsonNode, parentLayoutDir) {
     var props = jsonNode.properties || {};
 
     // 고정 크기 요소: 항상 FIXED, layoutGrow 금지
+    // 단, flexGrow(Expanded/Flexible)가 있으면 flex 우선 (mergeWrapperChains로 fixedSize+flexGrow 병합 가능)
+    var hasFlexGrow = props.flexGrow > 0;
     if (props.isIconBox || props.isSvgBox || props.isVectorCandidate ||
-        jsonNode.type === "Image" || props.fixedSize) {
+        jsonNode.type === "Image" || (props.fixedSize && !hasFlexGrow)) {
       figNode.layoutSizingHorizontal = "FIXED";
       figNode.layoutSizingVertical = "FIXED";
       figNode.layoutGrow = 0;
