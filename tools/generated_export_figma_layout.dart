@@ -299,9 +299,6 @@ void _collectDesignInfoFromElements(Element element) {
     final ro = element.renderObject;
     if (ro != null) {
       _widgetNameByRenderObject[ro] = widgetTypeName;
-      print('[TAG] $widgetTypeName → RO: ${ro.runtimeType} hashCode=${ro.hashCode}');
-    } else {
-      print('[TAG] $widgetTypeName → renderObject is NULL');
     }
   }
 
@@ -320,6 +317,21 @@ double? _parseBorderRadius(dynamic br) {
   final m = RegExp(r'\d+\.?\d*').firstMatch(s);
   if (m != null) return double.tryParse(m.group(0)!);
   return double.tryParse(s);
+}
+
+/// 노드 트리에 실질적 콘텐츠(Text, Image, visual 있는 Frame)가 있는지
+bool _hasContentRecursive(Map<String, dynamic> node) {
+  final type = node['type'];
+  if (type == 'Text' || type == 'Image') return true;
+  final vis = node['visual'] as Map<String, dynamic>? ?? {};
+  if (vis['content'] != null || vis['backgroundColor'] != null ||
+      vis['border'] != null || vis['imagePath'] != null) return true;
+  final children = node['children'] as List?;
+  if (children == null) return false;
+  for (final c in children) {
+    if (c is Map<String, dynamic> && _hasContentRecursive(c)) return true;
+  }
+  return false;
 }
 
 /// visual 속성이 있는지 (배경, 테두리, 그림자 등)
@@ -465,6 +477,32 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         }
       } catch (_) {}
     }
+  }
+  // ---------------------------------------------------
+  // [1.5] Editable Text (TextField 입력 텍스트)
+  // ---------------------------------------------------
+  else if (node is RenderEditable) {
+    type = 'Text';
+    hasVisual = true;
+    try {
+      final text = node.text;
+      final plainText = text?.toPlainText() ?? '';
+      if (plainText.isNotEmpty) {
+        visual['content'] = plainText;
+        visual['textAlign'] = node.textAlign.toString().split('.').last;
+        final style = text is TextSpan ? text.style : null;
+        if (style != null) {
+          visual['fontFamily'] = style.fontFamily;
+          visual['fontSize'] = style.fontSize;
+          visual['fontWeight'] = style.fontWeight.toString();
+          visual['color'] = _colorToHex(style.color);
+          visual['letterSpacing'] = style.letterSpacing;
+          if (style.height != null) {
+            visual['lineHeightMultiplier'] = style.height;
+          }
+        }
+      }
+    } catch (_) {}
   }
   // ---------------------------------------------------
   // [2] Image
@@ -994,13 +1032,14 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   // [11] 자식 순회
   // ---------------------------------------------------
   final List<Map<String, dynamic>> children = [];
+  final bool _skipChildren = (type == 'Text');
   final bool isFlex = node is RenderFlex;
   final bool isStack = node is RenderStack;
   final List<double> _gaps = [];
   final List<double> _childMainAxisPositions = [];
 
   try {
-    node.visitChildren((child) {
+    if (!_skipChildren) node.visitChildren((child) {
       if (child is RenderBox) {
         final c = _crawl(child);
         if (c != null) {
@@ -1122,12 +1161,34 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   // [10.5] TextField 구조 재편: bg를 입력 영역에만, 패딩 적용
   // ---------------------------------------------------
   if (isTextFieldNode && children.isNotEmpty) {
-    // decoration box 찾기: 빈 Frame, 부모와 비슷한 너비
+    // hint/text 중복 제거:
+    // RenderEditable(실텍스트)이 먼저, RenderParagraph(hint)가 뒤에 옴.
+    // 실텍스트가 비어있지 않으면 hint(두 번째) 제거.
+    // 실텍스트가 비어있으면 실텍스트 제거하고 hint만 남김.
+    final textKids = children.where((c) => c['type'] == 'Text').toList();
+    if (textKids.length >= 2) {
+      final first = textKids.first; // 실텍스트 (RenderEditable)
+      final second = textKids.last; // hint (RenderParagraph)
+      final firstContent = ((first['visual'] as Map?)?['content'] as String?) ?? '';
+      if (firstContent.isNotEmpty) {
+        // 실텍스트 있음 → hint 제거
+        children.remove(second);
+      } else {
+        // 실텍스트 비어있음 → 실텍스트 제거, hint만 남김
+        children.remove(first);
+      }
+    } else if (textKids.length == 1) {
+      final v = textKids.first['visual'] as Map<String, dynamic>? ?? {};
+      if (((v['content'] as String?) ?? '').isEmpty) {
+        children.remove(textKids.first);
+      }
+    }
+
+    // decoration box 찾기: 콘텐츠 없는 Frame, 부모와 비슷한 너비
     int decoIdx = -1;
     for (int i = children.length - 1; i >= 0; i--) {
       final c = children[i];
-      if (c['type'] == 'Frame' &&
-          (c['children'] as List?)?.isEmpty == true) {
+      if (c['type'] == 'Frame' && !_hasContentRecursive(c)) {
         final cr = c['rect'] as Map<String, dynamic>?;
         if (cr != null) {
           final cw = (cr['w'] as num?)?.toDouble() ?? 0;
@@ -1352,40 +1413,10 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         'h': node.size.height,
       };
       // widgetName 전파 (merge 시 소실 방지)
-      if (_widgetNameByRenderObject.containsKey(node)) {
-        final wn = _widgetNameByRenderObject[node];
-        print('[MERGE] widgetName=$wn merged into child, child already has=${child['widgetName']}');
-        if (!child.containsKey('widgetName')) {
-          child['widgetName'] = wn;
-        }
+      if (_widgetNameByRenderObject.containsKey(node) && !child.containsKey('widgetName')) {
+        child['widgetName'] = _widgetNameByRenderObject[node];
       }
       return child;
-    }
-  }
-
-  // Debug: layoutMode가 NONE인 노드 상세 로깅
-  if (layoutMode == 'NONE') {
-    print('[CRAWL-DEBUG] layoutMode=NONE with ${children.length} children');
-    print('  runtimeType: ${node.runtimeType}');
-    print('  runtimeTypeStr: $runtimeTypeStr');
-    print('  size: ${node.size}');
-    print('  hasVisual: $hasVisual');
-    print('  isLayoutNode: $isLayoutNode');
-    print('  isSizedBox: $isSizedBox');
-    print('  visual keys: ${visual.keys.toList()}');
-    print('  containerLayout: $containerLayout');
-    try {
-      final parent = node.parent;
-      if (parent != null) {
-        print('  parent runtimeType: ${parent.runtimeType}');
-      }
-    } catch (_) {}
-    for (int i = 0; i < children.length; i++) {
-      final c = children[i];
-      print(
-        '  child[$i]: type=${c['type']}, layoutMode=${c['layoutMode']}, '
-        'rect=${c['rect']}',
-      );
     }
   }
 
@@ -1406,9 +1437,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   };
   if (containerLayout.isNotEmpty) result['containerLayout'] = containerLayout;
   if (_widgetNameByRenderObject.containsKey(node)) {
-    final wn = _widgetNameByRenderObject[node];
-    result['widgetName'] = wn;
-    print('[CRAWL-WN] widgetName=$wn on ${node.runtimeType} hashCode=${node.hashCode} layoutMode=$layoutMode children=${children.length}');
+    result['widgetName'] = _widgetNameByRenderObject[node];
   }
   // childLayout은 부모가 설정 (위에서 이미 설정됨)
   return result;
