@@ -77,6 +77,7 @@ final Map<RenderObject, String> _widgetNameByRenderObject = {};
 final Map<RenderObject, double> _blurInfoByRenderObject = {};
 final Map<RenderObject, ShaderMask> _shaderMaskWidgets = {};
 final Map<RenderObject, Map<String, dynamic>> _shaderMaskGradients = {};
+final Map<RenderObject, CustomPainter> _customPainterByRO = {};
 String? _asyncExportResult;
 bool _asyncExportBusy = false;
 
@@ -272,6 +273,35 @@ Future<void> _preCaptureImages(RenderObject node) async {
         }
       }
     } catch (_) {}
+  }
+
+  // CustomPaint with painter → 투명 배경에 painter만 직접 paint
+  if (node is RenderBox &&
+      _customPainterByRO.containsKey(node) &&
+      !_imageDataByNode.containsKey(node)) {
+    try {
+      final painter = _customPainterByRO[node]!;
+      final w = node.size.width;
+      final h = node.size.height;
+      if (w > 0 && h > 0) {
+        const double pr = 2.0;
+        final outW = (w * pr).round();
+        final outH = (h * pr).round();
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
+        canvas.scale(pr);
+        painter.paint(canvas, Size(w, h));
+        final picture = recorder.endRecording();
+        final img = await picture.toImage(outW, outH);
+        final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+        img.dispose();
+        if (byteData != null) {
+          _imageDataByNode[node] = base64Encode(byteData.buffer.asUint8List());
+        }
+      }
+    } catch (e) {
+      debugPrint('[CustomPainter] direct paint failed: $e');
+    }
   }
 
   // Checkbox / Switch 등 → 가장 가까운 RepaintBoundary에서 crop 캡처
@@ -529,13 +559,17 @@ void _collectDesignInfoFromElements(Element element) {
 
   // ShaderMask → render tree 순회로 감지 (async phase에서 처리)
 
-  // CustomPaint with painter → 캡처 (장식 원 등 CustomPainter)
-  // 주의: _ShapeBorderPaint 등 Flutter 내부 위젯도 CustomPaint를 상속하므로
-  // runtimeType이 정확히 'CustomPaint'인 경우만 캡처 (사용자 정의 CustomPaint만)
-  if (widgetTypeName == 'CustomPaint' && (widget as CustomPaint).painter != null) {
-    final ro = element.renderObject;
-    if (ro != null) {
-      _markCaptureRecursive(ro);
+  // CustomPaint with painter → painter를 직접 빈 캔버스에 paint (투명 배경)
+  // child가 없는 leaf CustomPaint만 캡처 (순수 장식용)
+  // Flutter 내부 CustomPaint(child 있음: ink effect, indicator 등)는 스킵 → 자연 분해
+  if (widgetTypeName == 'CustomPaint') {
+    final cp = widget as CustomPaint;
+    if (cp.painter != null && cp.child == null) {
+      final ro = element.renderObject;
+      if (ro != null) {
+        _customPainterByRO[ro] = cp.painter!;
+        _markCaptureRecursive(ro);
+      }
     }
   }
 
@@ -2096,6 +2130,7 @@ String figmaExtractorEntryPoint() {
     _customPaintCaptures.clear();
     _blurInfoByRenderObject.clear();
     _shaderMaskWidgets.clear();
+    _customPainterByRO.clear();
     // _shaderMaskGradients는 async phase에서 채워지므로 여기서 clear하지 않음
 
     final rootElement = WidgetsBinding.instance.renderViewElement;
@@ -2189,6 +2224,7 @@ Future<String> _figmaExportWithImagesAsync() async {
   _blurInfoByRenderObject.clear();
   _shaderMaskWidgets.clear();
   _shaderMaskGradients.clear();
+  _customPainterByRO.clear();
 
   // Phase 0: Element tree 순회 → _customPaintCaptures 등록 (pre-capture에 필요)
   final rootElement = WidgetsBinding.instance.renderViewElement;

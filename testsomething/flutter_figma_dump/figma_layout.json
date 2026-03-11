@@ -482,7 +482,42 @@
                                     "fontWeight": "FontWeight.w200",
                                     "color": "#ffffffff",
                                     "letterSpacing": 0.25,
-                                    "lineHeightMultiplier": 1.0
+                                    "lineHeightMultiplier": 1.0,
+                                    "gradient": {
+                                      "type": "linear",
+                                      "colors": [
+                                        "#fffefffe",
+                                        "#fff3fef7",
+                                        "#ffe7fdef",
+                                        "#ffdbfce8",
+                                        "#ffd0fbe0",
+                                        "#ffc4fad9",
+                                        "#ffb9f9d1",
+                                        "#ffadf8c9",
+                                        "#ffa1f7c2",
+                                        "#ff96f7ba"
+                                      ],
+                                      "stops": [
+                                        0.0,
+                                        0.1111111111111111,
+                                        0.2222222222222222,
+                                        0.3333333333333333,
+                                        0.4444444444444444,
+                                        0.5555555555555556,
+                                        0.6666666666666666,
+                                        0.7777777777777778,
+                                        0.8888888888888888,
+                                        1.0
+                                      ],
+                                      "begin": {
+                                        "x": 0.5,
+                                        "y": 0.0
+                                      },
+                                      "end": {
+                                        "x": 0.5,
+                                        "y": 1.0
+                                      }
+                                    }
                                   },
                                   "children": [],
                                   "childLayout": {
