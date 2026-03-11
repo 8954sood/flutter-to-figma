@@ -371,6 +371,7 @@ void _collectDesignInfoFromElements(Element element) {
   const captureWidgets = {
     'Checkbox', 'Switch', 'CupertinoSwitch',
     'Slider', 'CircularProgressIndicator', 'LinearProgressIndicator',
+    'ChoiceChip', 'FilterChip', 'InputChip', 'ActionChip',
   };
   if (captureWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
@@ -660,9 +661,13 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     if (b64 != null) {
       Offset cpOffset;
       try {
-        cpOffset = (node.parentData as BoxParentData).offset;
+        cpOffset = node.localToGlobal(Offset.zero);
       } catch (_) {
-        cpOffset = Offset.zero;
+        try {
+          cpOffset = (node.parentData as BoxParentData).offset;
+        } catch (_) {
+          cpOffset = Offset.zero;
+        }
       }
       const double pad = 4.0;
       return {
@@ -782,7 +787,58 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       if (plainText.isNotEmpty) {
         visual['content'] = plainText;
         visual['textAlign'] = node.textAlign.toString().split('.').last;
-        final style = text is TextSpan ? text.style : null;
+        TextStyle? style;
+        final bool isTS = text is TextSpan;
+        if (!isTS) {
+          print('[CRAWL-DEBUG] text is NOT TextSpan, runtimeType=${text.runtimeType}');
+        }
+        if (isTS) {
+          final textSpan = text as TextSpan;
+          style = textSpan.style;
+
+          // RichText children: 개별 TextSpan 스타일을 textSpans 배열로 내보내기
+          try {
+            final spanChildren = textSpan.children;
+            if (spanChildren != null && spanChildren.isNotEmpty) {
+              final spans = <Map<String, dynamic>>[];
+              int charOffset = 0;
+              for (final child in spanChildren) {
+                if (child is TextSpan) {
+                  final spanText = child.text ?? '';
+                  if (spanText.isNotEmpty) {
+                    final spanMap = <String, dynamic>{
+                      'start': charOffset,
+                      'end': charOffset + spanText.length,
+                    };
+                    final s = child.style;
+                    if (s != null) {
+                      if (s.fontSize != null) spanMap['fontSize'] = s.fontSize;
+                      if (s.fontWeight != null) spanMap['fontWeight'] = s.fontWeight.toString();
+                      if (s.color != null) spanMap['color'] = _colorToHex(s.color);
+                      if (s.fontFamily != null) spanMap['fontFamily'] = s.fontFamily;
+                      if (s.letterSpacing != null) spanMap['letterSpacing'] = s.letterSpacing;
+                      if (s.height != null) spanMap['lineHeightMultiplier'] = s.height;
+                    }
+                    spans.add(spanMap);
+                    charOffset += spanText.length;
+                  }
+                }
+              }
+              if (spans.isNotEmpty) {
+                visual['textSpans'] = spans;
+              }
+              // 최상위 style이 없으면 첫 번째 자식 style을 fallback
+              if (style == null || (style.fontSize == null && style.fontWeight == null)) {
+                final first = spanChildren.first;
+                if (first is TextSpan && first.style != null) {
+                  style = first.style;
+                }
+              }
+            }
+          } catch (e) {
+            print('[CRAWL-DEBUG] textSpans inner error: $e');
+          }
+        }
         if (style != null) {
           visual['fontFamily'] = style.fontFamily;
           visual['fontSize'] = style.fontSize;
@@ -794,7 +850,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      print('[CRAWL-DEBUG] RenderParagraph outer error: $e');
+    }
   }
   // ---------------------------------------------------
   // [2] Image
@@ -1429,6 +1487,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   final bool _skipChildren = (type == 'Text');
   final bool isFlex = node is RenderFlex;
   final bool isStack = node is RenderStack;
+  final bool isWrap = node is RenderWrap;
   final List<double> _gaps = [];
   final List<double> _childMainAxisPositions = [];
   double? _lastChildEnd; // gap 계산용: 이전 non-null 자식의 끝 좌표
@@ -1523,6 +1582,15 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
               }
               childLayout['sizingH'] = 'FIXED';
               childLayout['sizingV'] = 'FIXED';
+              c['childLayout'] = childLayout;
+            }
+
+            // Wrap 자식: HUG 사이징 (자연 크기 유지)
+            if (isWrap) {
+              final childLayout =
+                  c['childLayout'] as Map<String, dynamic>? ?? {};
+              childLayout['sizingH'] = 'HUG';
+              childLayout['sizingV'] = 'HUG';
               c['childLayout'] = childLayout;
             }
 

@@ -765,6 +765,48 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       try {
         visual['content'] = node.text.toPlainText();
         visual['textAlign'] = node.textAlign.toString().split('.').last;
+
+        // RichText children: 개별 TextSpan 스타일을 textSpans 배열로 내보내기
+        if (inlineSpan is TextSpan) {
+          final spanChildren = inlineSpan.children;
+          if (spanChildren != null && spanChildren.isNotEmpty) {
+            final spans = <Map<String, dynamic>>[];
+            int charOffset = 0;
+            for (final child in spanChildren) {
+              if (child is TextSpan) {
+                final spanText = child.text ?? '';
+                if (spanText.isNotEmpty) {
+                  final spanMap = <String, dynamic>{
+                    'start': charOffset,
+                    'end': charOffset + spanText.length,
+                  };
+                  final s = child.style;
+                  if (s != null) {
+                    if (s.fontSize != null) spanMap['fontSize'] = s.fontSize;
+                    if (s.fontWeight != null) spanMap['fontWeight'] = s.fontWeight.toString();
+                    if (s.color != null) spanMap['color'] = _colorToHex(s.color);
+                    if (s.fontFamily != null) spanMap['fontFamily'] = s.fontFamily;
+                    if (s.letterSpacing != null) spanMap['letterSpacing'] = s.letterSpacing;
+                    if (s.height != null) spanMap['lineHeightMultiplier'] = s.height;
+                  }
+                  spans.add(spanMap);
+                  charOffset += spanText.length;
+                }
+              }
+            }
+            if (spans.isNotEmpty) {
+              visual['textSpans'] = spans;
+            }
+            // 최상위 style이 없으면 첫 번째 자식 style을 fallback
+            if (style == null || (style.fontSize == null && style.fontWeight == null)) {
+              final first = spanChildren.first;
+              if (first is TextSpan && first.style != null) {
+                style = first.style;
+              }
+            }
+          }
+        }
+
         if (style != null) {
           visual['fontFamily'] = style.fontFamily;
           visual['fontSize'] = style.fontSize;
@@ -790,7 +832,10 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       if (plainText.isNotEmpty) {
         visual['content'] = plainText;
         visual['textAlign'] = node.textAlign.toString().split('.').last;
-        final style = text is TextSpan ? text.style : null;
+        TextStyle? style;
+        if (text is TextSpan) {
+          style = text.style;
+        }
         if (style != null) {
           visual['fontFamily'] = style.fontFamily;
           visual['fontSize'] = style.fontSize;

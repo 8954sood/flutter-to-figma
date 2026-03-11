@@ -835,6 +835,15 @@ async function preloadFonts(rootNode) {
       var fam = props.fontFamily || null;
       var weight = props.fontWeight || "w400";
       addFont(resolveFont(fam, weight));
+      // RichText: 개별 span 폰트도 수집
+      if (props.textSpans && Array.isArray(props.textSpans)) {
+        for (var si = 0; si < props.textSpans.length; si++) {
+          var span = props.textSpans[si];
+          if (span.fontWeight || span.fontFamily) {
+            addFont(resolveFont(span.fontFamily || fam, span.fontWeight || weight));
+          }
+        }
+      }
     }
     var children = node.children || [];
     for (var i = 0; i < children.length; i++) {
@@ -1426,6 +1435,50 @@ function applyTextProps(textNode, props) {
 
   if (props.textAlign) {
     textNode.textAlignHorizontal = mapTextAlign(props.textAlign);
+  }
+
+  // RichText: 개별 TextSpan range 스타일 적용
+  if (props.textSpans && Array.isArray(props.textSpans) && props.textSpans.length > 0) {
+    var totalLen = textNode.characters.length;
+    for (var si = 0; si < props.textSpans.length; si++) {
+      var span = props.textSpans[si];
+      var start = span.start || 0;
+      var end = span.end || 0;
+      if (start >= end || start >= totalLen) continue;
+      if (end > totalLen) end = totalLen;
+
+      try {
+        if (typeof span.fontSize === "number") {
+          textNode.setRangeFontSize(start, end, span.fontSize);
+        }
+        if (span.fontWeight || span.fontFamily) {
+          var spanFont = resolveFont(span.fontFamily || fontFamily, span.fontWeight || fontWeight);
+          textNode.setRangeFontName(start, end, spanFont);
+        }
+        if (span.color) {
+          var sc = parseFlutterColor(span.color);
+          textNode.setRangeFills(start, end, [{
+            type: "SOLID",
+            color: { r: sc.r, g: sc.g, b: sc.b },
+            opacity: sc.a,
+          }]);
+        }
+        if (span.letterSpacing != null) {
+          var sls = Number(span.letterSpacing);
+          if (!isNaN(sls)) {
+            textNode.setRangeLetterSpacing(start, end, { value: sls, unit: "PIXELS" });
+          }
+        }
+        if (span.lineHeightMultiplier != null && span.fontSize) {
+          var slh = Number(span.lineHeightMultiplier) * Number(span.fontSize);
+          if (!isNaN(slh) && slh > 0) {
+            textNode.setRangeLineHeight(start, end, { value: slh, unit: "PIXELS" });
+          }
+        }
+      } catch (e) {
+        console.warn("[FlutterPlugin] setRange failed for span", si, e);
+      }
+    }
   }
 }
 
