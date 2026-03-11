@@ -2013,6 +2013,27 @@ String figmaExtractorEntryPoint() {
 }
 
 /// =======================================================
+/// 5.5. 스크롤 위치 수집
+/// =======================================================
+
+List<ScrollPosition> _collectScrollPositions(Element? rootElement) {
+  final List<ScrollPosition> positions = [];
+  if (rootElement == null) return positions;
+  void visit(Element element) {
+    final widget = element.widget;
+    if (widget is Scrollable) {
+      try {
+        final scrollable = (element as StatefulElement).state as ScrollableState;
+        positions.add(scrollable.position);
+      } catch (_) {}
+    }
+    element.visitChildren(visit);
+  }
+  rootElement.visitChildren(visit);
+  return positions;
+}
+
+/// =======================================================
 /// 6. Async export (이미지 pre-capture 포함)
 /// =======================================================
 
@@ -2031,7 +2052,30 @@ Future<String> _figmaExportWithImagesAsync() async {
 
   final root = RendererBinding.instance.renderView;
 
-  // Phase 1: async pre-capture (_customPaintCaptures가 이미 채워진 상태)
+  // Phase 0.5: 스크롤 뷰 pre-scroll → viewport 밖 위젯도 paint 강제
+  final scrollPositions = _collectScrollPositions(rootElement);
+  final Map<ScrollPosition, double> originalOffsets = {};
+  for (final pos in scrollPositions) {
+    originalOffsets[pos] = pos.pixels;
+  }
+  for (final pos in scrollPositions) {
+    if (pos.maxScrollExtent <= 0) continue;
+    final viewportDim = pos.viewportDimension;
+    double current = 0;
+    while (current < pos.maxScrollExtent) {
+      current = (current + viewportDim).clamp(0.0, pos.maxScrollExtent);
+      pos.jumpTo(current);
+      await WidgetsBinding.instance.endOfFrame;
+      await _preCaptureImages(root);
+    }
+  }
+  // 원래 스크롤 위치로 복원
+  for (final pos in scrollPositions) {
+    pos.jumpTo(originalOffsets[pos] ?? 0.0);
+  }
+  await WidgetsBinding.instance.endOfFrame;
+
+  // Phase 1: async pre-capture (상단 viewport 위젯 포함)
   await _preCaptureImages(root);
 
   // Phase 2: 기존 sync 크롤 (figmaExtractorEntryPoint 재사용)
