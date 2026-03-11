@@ -1462,7 +1462,27 @@ function applyTextProps(textNode, props) {
     textNode.fontSize = props.fontSize;
   }
 
-  if (props.color) {
+  if (props.gradient) {
+    // ShaderMask gradient → 텍스트에 gradient fill 적용
+    var g = props.gradient;
+    var gColors = g.colors || [];
+    var gStops = g.stops || [];
+    var gradientStops = [];
+    for (var gi = 0; gi < gColors.length; gi++) {
+      var gc = parseFlutterColor(gColors[gi]);
+      gradientStops.push({
+        position: gStops[gi] != null ? gStops[gi] : (gi / Math.max(gColors.length - 1, 1)),
+        color: { r: gc.r, g: gc.g, b: gc.b, a: gc.a }
+      });
+    }
+    var gFill = { type: "GRADIENT_LINEAR", gradientStops: gradientStops };
+    var gbx = g.begin ? g.begin.x : 0.5;
+    var gby = g.begin ? g.begin.y : 0;
+    var gex = g.end ? g.end.x : 0.5;
+    var gey = g.end ? g.end.y : 1;
+    gFill.gradientTransform = buildLinearGradientTransform(gbx, gby, gex, gey);
+    textNode.fills = [gFill];
+  } else if (props.color) {
     var c = parseFlutterColor(props.color);
     textNode.fills = [{
       type: "SOLID",
