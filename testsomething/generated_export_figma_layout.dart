@@ -395,7 +395,6 @@ void _collectDesignInfoFromElements(Element element) {
   const captureWidgets = {
     'Checkbox', 'Switch', 'CupertinoSwitch',
     'Slider', 'CircularProgressIndicator', 'LinearProgressIndicator',
-    'ChoiceChip', 'FilterChip', 'InputChip', 'ActionChip',
   };
   if (captureWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
@@ -685,13 +684,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     if (b64 != null) {
       Offset cpOffset;
       try {
-        cpOffset = node.localToGlobal(Offset.zero);
+        cpOffset = (node.parentData as BoxParentData).offset;
       } catch (_) {
-        try {
-          cpOffset = (node.parentData as BoxParentData).offset;
-        } catch (_) {
-          cpOffset = Offset.zero;
-        }
+        cpOffset = Offset.zero;
       }
       const double pad = 4.0;
       return {
@@ -1458,7 +1453,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   final bool _skipChildren = (type == 'Text');
   final bool isFlex = node is RenderFlex;
   final bool isStack = node is RenderStack;
-  final bool isWrap = node is RenderWrap;
   final List<double> _gaps = [];
   final List<double> _childMainAxisPositions = [];
   double? _lastChildEnd; // gap 계산용: 이전 non-null 자식의 끝 좌표
@@ -1553,15 +1547,6 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
               }
               childLayout['sizingH'] = 'FIXED';
               childLayout['sizingV'] = 'FIXED';
-              c['childLayout'] = childLayout;
-            }
-
-            // Wrap 자식: HUG 사이징 (자연 크기 유지)
-            if (isWrap) {
-              final childLayout =
-                  c['childLayout'] as Map<String, dynamic>? ?? {};
-              childLayout['sizingH'] = 'HUG';
-              childLayout['sizingV'] = 'HUG';
               c['childLayout'] = childLayout;
             }
 

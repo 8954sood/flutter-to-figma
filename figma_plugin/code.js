@@ -110,6 +110,10 @@ function normalizeSchemaV2(node) {
       }
     } else if (vk === "gradient" && vv && typeof vv === "object") {
       props.gradient = vv;
+    } else if (vk === "backgroundBlur" && typeof vv === "number" && vv > 0) {
+      props.backgroundBlur = vv;
+    } else if (vk === "rotation" && typeof vv === "number") {
+      props.rotation = vv;
     } else if (vv != null && !(vk in props)) {
       // 나머지 (backgroundColor, content, fontFamily, fontSize, color, letterSpacing, textAlign, isIconBox, ...) 직접 복사
       props[vk] = vv;
@@ -756,6 +760,12 @@ function assignSizingHints(node, parentProps) {
           node._sizingV = "HUG";
         }
       }
+
+      // WRAP 레이아웃: 가로 FILL (부모 폭 채워야 줄바꿈 가능), 세로 HUG
+      if (props.layoutWrap) {
+        node._sizingH = "FILL";
+        node._sizingV = "HUG";
+      }
     }
   }
 
@@ -1025,6 +1035,11 @@ function renderNode(node, parentFigma, parentLayoutDir) {
 
   figNode.name = generateNodeName(node);
 
+  // Rotation (degrees → Figma uses negative convention)
+  if (props.rotation != null && typeof props.rotation === "number" && Math.abs(props.rotation) > 0.01) {
+    figNode.rotation = -props.rotation;
+  }
+
   // flexGrow + fixedSize 충돌: mergeWrapperChains가 Expanded 프레임과 내부 아이콘 체인을 병합한 경우
   // → wrapper ROW(FILL, align=END)를 만들고, 원본은 FIXED 자식으로 배치
   if (props.flexGrow > 0 && props.fixedSize && node.type === "Frame") {
@@ -1145,10 +1160,11 @@ function applyVisualProps(frame, props) {
     frame.cornerRadius = br;
   }
 
-  // Shadow
+  // Effects (shadow + background blur 누적)
+  var effects = [];
   if (props.shadowColor) {
     var sc = parseFlutterColor(props.shadowColor);
-    frame.effects = [{
+    effects.push({
       type: "DROP_SHADOW",
       color: { r: sc.r, g: sc.g, b: sc.b, a: sc.a },
       offset: { x: props.shadowOffsetX || 0, y: props.shadowOffsetY || 0 },
@@ -1156,20 +1172,26 @@ function applyVisualProps(frame, props) {
       spread: props.shadowSpreadRadius || 0,
       visible: true,
       blendMode: "NORMAL",
-    }];
+    });
   } else if (props.elevation && typeof props.elevation === "number" && props.elevation > 0) {
     var elev = props.elevation;
-    frame.effects = [{
+    effects.push({
       type: "DROP_SHADOW",
       color: { r: 0, g: 0, b: 0, a: 0.25 },
       offset: { x: 0, y: elev },
       radius: elev * 2,
       visible: true,
       blendMode: "NORMAL",
-    }];
-  } else {
-    frame.effects = [];
+    });
   }
+  if (props.backgroundBlur && typeof props.backgroundBlur === "number" && props.backgroundBlur > 0) {
+    effects.push({
+      type: "BACKGROUND_BLUR",
+      radius: props.backgroundBlur,
+      visible: true,
+    });
+  }
+  frame.effects = effects;
 }
 
 function applyBgColor(frame, props) {

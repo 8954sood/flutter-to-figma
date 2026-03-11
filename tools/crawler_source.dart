@@ -6,6 +6,7 @@
 // Schema v2: explicit layoutMode, childLayout, containerLayout, visual
 
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -52,6 +53,7 @@ final Set<RenderObject> _svgBoxTargets = {};
 final Map<RenderObject, String> _imageDataByNode = {};
 final Set<RenderObject> _customPaintCaptures = {};
 final Map<RenderObject, String> _widgetNameByRenderObject = {};
+final Map<RenderObject, double> _blurInfoByRenderObject = {};
 String? _asyncExportResult;
 bool _asyncExportBusy = false;
 
@@ -369,12 +371,53 @@ void _collectDesignInfoFromElements(Element element) {
   }
 
   // Checkbox / Switch → renderObject와 하위 자식 모두 캡처 대상 등록
-  const captureWidgets = {'Checkbox', 'Switch', 'CupertinoSwitch'};
+  const captureWidgets = {
+    'Checkbox', 'Switch', 'CupertinoSwitch',
+    'Slider', 'CircularProgressIndicator', 'LinearProgressIndicator',
+    'ChoiceChip', 'FilterChip', 'InputChip', 'ActionChip',
+  };
   if (captureWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
     if (ro != null) {
       _markCaptureRecursive(ro);
     }
+  }
+
+  // ShaderMask → 서브트리 캡처 (gradient text 등)
+  if (widgetTypeName == 'ShaderMask') {
+    final ro = element.renderObject;
+    if (ro != null) {
+      _markCaptureRecursive(ro);
+    }
+  }
+
+  // CustomPaint with painter → 캡처 (장식 원 등 CustomPainter)
+  // 주의: _ShapeBorderPaint 등 Flutter 내부 위젯도 CustomPaint를 상속하므로
+  // runtimeType이 정확히 'CustomPaint'인 경우만 캡처 (사용자 정의 CustomPaint만)
+  if (widgetTypeName == 'CustomPaint' && (widget as CustomPaint).painter != null) {
+    final ro = element.renderObject;
+    if (ro != null) {
+      _markCaptureRecursive(ro);
+    }
+  }
+
+  // BackdropFilter → blur sigma 추출
+  if (widget is BackdropFilter) {
+    try {
+      final filter = widget.filter;
+      final filterStr = filter.toString();
+      // ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0, ...)
+      final sigmaMatch = RegExp(r'sigmaX:\s*([\d.]+)').firstMatch(filterStr);
+      if (sigmaMatch != null) {
+        final sigma = double.tryParse(sigmaMatch.group(1)!) ?? 0;
+        if (sigma > 0) {
+          final ro = element.renderObject;
+          if (ro != null) {
+            _blurInfoByRenderObject[ro] = sigma;
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   element.visitChildren(_collectDesignInfoFromElements);
@@ -483,7 +526,8 @@ bool _hasVisualProps(Map<String, dynamic> visual) {
       visual['isIconBox'] == true ||
       visual['isSvgBox'] == true ||
       visual['isTextField'] == true ||
-      visual['isDivider'] == true;
+      visual['isDivider'] == true ||
+      visual['backgroundBlur'] != null;
 }
 
 /// =======================================================
@@ -511,6 +555,73 @@ void _extractSliverPadding(RenderObject sliver, Map<String, dynamic> cl) {
 }
 
 List<Map<String, dynamic>> _crawlThroughSliver(RenderObject sliver) {
+  // SliverGrid → ROW 단위로 그룹핑하여 COLUMN > ROW * n 구조 생성
+  if (sliver is RenderSliverGrid) {
+    final List<Map<String, dynamic>> gridChildren = [];
+    sliver.visitChildren((child) {
+      if (child is RenderBox) {
+        final res = _crawl(child);
+        if (res != null) gridChildren.add(res);
+      }
+    });
+    if (gridChildren.isEmpty) return [];
+
+    // crossAxisCount + spacing 추출 (gridDelegate에서)
+    int crossAxisCount = 2; // 기본값
+    double crossAxisSpacing = 0.0;
+    double mainAxisSpacing = 0.0;
+    try {
+      final delegate = (sliver as dynamic).gridDelegate;
+      if (delegate is SliverGridDelegateWithFixedCrossAxisCount) {
+        crossAxisCount = delegate.crossAxisCount;
+        crossAxisSpacing = delegate.crossAxisSpacing;
+        mainAxisSpacing = delegate.mainAxisSpacing;
+      }
+    } catch (_) {}
+
+    // 자식을 ROW 단위로 그룹핑
+    final List<Map<String, dynamic>> rows = [];
+    for (int i = 0; i < gridChildren.length; i += crossAxisCount) {
+      final end = (i + crossAxisCount).clamp(0, gridChildren.length);
+      final rowChildren = gridChildren.sublist(i, end);
+      // 각 자식에 flexGrow 설정
+      for (final rc in rowChildren) {
+        final cl = rc['childLayout'] as Map<String, dynamic>? ?? {};
+        cl['flexGrow'] = 1;
+        cl['sizingH'] = 'FILL';
+        cl['sizingV'] = 'HUG';
+        rc['childLayout'] = cl;
+      }
+      // ROW 래퍼 생성
+      final firstRect = rowChildren.first['rect'] as Map<String, dynamic>;
+      rows.add({
+        'type': 'Frame',
+        'layoutMode': 'ROW',
+        'rect': {
+          'x': firstRect['x'],
+          'y': firstRect['y'],
+          'w': sliver.constraints.crossAxisExtent,
+          'h': (firstRect['h'] as num).toDouble(),
+        },
+        'visual': <String, dynamic>{},
+        'containerLayout': {
+          'mainAxisAlignment': 'start',
+          'crossAxisAlignment': 'start',
+          'mainAxisSize': 'max',
+          'itemSpacing': crossAxisSpacing,
+        },
+        'children': rowChildren,
+      });
+    }
+    // 행 간격은 부모 COLUMN의 itemSpacing으로 처리됨 (mainAxisSpacing)
+    // rows에 mainAxisSpacing 정보를 첨부하여 상위에서 사용
+    if (rows.isNotEmpty && mainAxisSpacing > 0) {
+      // _crawlThroughSliver 결과는 바로 COLUMN children이 되므로
+      // 상위 _crawl에서 itemSpacing 계산 시 gap이 반영됨
+    }
+    return rows;
+  }
+
   final List<Map<String, dynamic>> results = [];
   sliver.visitChildren((child) {
     if (child is RenderBox) {
@@ -553,9 +664,13 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     if (b64 != null) {
       Offset cpOffset;
       try {
-        cpOffset = (node.parentData as BoxParentData).offset;
+        cpOffset = node.localToGlobal(Offset.zero);
       } catch (_) {
-        cpOffset = Offset.zero;
+        try {
+          cpOffset = (node.parentData as BoxParentData).offset;
+        } catch (_) {
+          cpOffset = Offset.zero;
+        }
       }
       const double pad = 4.0;
       return {
@@ -1144,6 +1259,88 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     if (br != null && br > 0) visual['borderRadius'] = br;
   }
   // ---------------------------------------------------
+  // [8.55] RenderBackdropFilter → backgroundBlur
+  // ---------------------------------------------------
+  else if (runtimeTypeStr.contains('RenderBackdropFilter')) {
+    type = 'Frame';
+    layoutMode = 'NONE';
+    // blur sigma를 visual에 추가
+    final blurSigma = _blurInfoByRenderObject[node];
+    if (blurSigma != null && blurSigma > 0) {
+      visual['backgroundBlur'] = blurSigma;
+      hasVisual = true;
+    }
+  }
+  // ---------------------------------------------------
+  // [8.57] RenderTransform → rotation 추출
+  // ---------------------------------------------------
+  else if (runtimeTypeStr.contains('RenderTransform')) {
+    type = 'Frame';
+    layoutMode = 'NONE';
+    try {
+      // Matrix4에서 회전 각도 추출
+      final transform = (node as dynamic).transform as Matrix4;
+      final sinVal = transform.entry(1, 0);
+      final cosVal = transform.entry(0, 0);
+      final radians = math.atan2(sinVal, cosVal);
+      if (radians.abs() > 0.001) {
+        final degrees = radians * 180.0 / math.pi;
+        visual['rotation'] = degrees;
+      }
+    } catch (_) {}
+    // 단일 자식이면 패스스루
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        // rotation을 자식에 전파
+        if (visual.containsKey('rotation')) {
+          final childVisual =
+              childResult['visual'] as Map<String, dynamic>? ?? {};
+          childVisual['rotation'] = visual['rotation'];
+          childResult['visual'] = childVisual;
+        }
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
+        };
+        return childResult;
+      }
+    }
+  }
+  // ---------------------------------------------------
+  // [8.6] RenderClipPath
+  // ---------------------------------------------------
+  else if (runtimeTypeStr.contains('RenderClipPath')) {
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
+        };
+        return childResult;
+      }
+    }
+    type = 'Frame';
+    layoutMode = 'NONE';
+  }
+  // ---------------------------------------------------
   // [9] Picture / CustomPaint
   // ---------------------------------------------------
   else if (runtimeTypeStr.contains('Picture') ||
@@ -1240,8 +1437,10 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   final bool _skipChildren = (type == 'Text');
   final bool isFlex = node is RenderFlex;
   final bool isStack = node is RenderStack;
+  final bool isWrap = node is RenderWrap;
   final List<double> _gaps = [];
   final List<double> _childMainAxisPositions = [];
+  double? _lastChildEnd; // gap 계산용: 이전 non-null 자식의 끝 좌표
 
   try {
     if (!_skipChildren)
@@ -1301,14 +1500,17 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
 
               c['childLayout'] = childLayout;
 
-              // itemSpacing 계산용 좌표 수집
+              // itemSpacing 계산용 좌표 수집 + gap 즉시 계산
               try {
                 final childOffset = child.localToGlobal(Offset.zero);
-                if (isHorizontal) {
-                  _childMainAxisPositions.add(childOffset.dx);
-                } else {
-                  _childMainAxisPositions.add(childOffset.dy);
+                final pos = isHorizontal ? childOffset.dx : childOffset.dy;
+                final size = isHorizontal ? child.size.width : child.size.height;
+                _childMainAxisPositions.add(pos);
+                if (_lastChildEnd != null) {
+                  final gap = pos - _lastChildEnd!;
+                  if (gap > 0) _gaps.add(gap.roundToDouble());
                 }
+                _lastChildEnd = pos + size;
               } catch (_) {}
             }
 
@@ -1330,6 +1532,15 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
               }
               childLayout['sizingH'] = 'FIXED';
               childLayout['sizingV'] = 'FIXED';
+              c['childLayout'] = childLayout;
+            }
+
+            // Wrap 자식: HUG 사이징 (자연 크기 유지)
+            if (isWrap) {
+              final childLayout =
+                  c['childLayout'] as Map<String, dynamic>? ?? {};
+              childLayout['sizingH'] = 'HUG';
+              childLayout['sizingV'] = 'HUG';
               c['childLayout'] = childLayout;
             }
 
@@ -1501,42 +1712,24 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     }
   }
 
-  // Flex: itemSpacing 계산 (개별 gap 측정 → 가장 빈번한 값 사용)
-  if (isFlex && _childMainAxisPositions.length >= 2) {
-    final flexNode = node as RenderFlex;
-    final isHorizontal = flexNode.direction == Axis.horizontal;
-    int childIdx = 0;
-    node.visitChildren((child) {
-      if (child is RenderBox && childIdx < _childMainAxisPositions.length - 1) {
-        final double childEnd;
-        if (isHorizontal) {
-          childEnd = _childMainAxisPositions[childIdx] + child.size.width;
-        } else {
-          childEnd = _childMainAxisPositions[childIdx] + child.size.height;
+  // Flex: itemSpacing 계산 (첫 번째 순회에서 수집한 _gaps 사용)
+  if (isFlex && _gaps.isNotEmpty) {
+    // 모두 같으면 그 값, 다르면 가장 빈번한 값
+    final allSame = _gaps.every((g) => g == _gaps.first);
+    if (allSame) {
+      containerLayout['itemSpacing'] = _gaps.first;
+    } else {
+      final freq = <double, int>{};
+      for (final g in _gaps) freq[g] = (freq[g] ?? 0) + 1;
+      double bestGap = _gaps.first;
+      int bestCount = 0;
+      freq.forEach((g, count) {
+        if (count > bestCount) {
+          bestGap = g;
+          bestCount = count;
         }
-        final gap = _childMainAxisPositions[childIdx + 1] - childEnd;
-        if (gap > 0) _gaps.add(gap.roundToDouble());
-      }
-      childIdx++;
-    });
-    if (_gaps.isNotEmpty) {
-      // 모두 같으면 그 값, 다르면 가장 빈번한 값
-      final allSame = _gaps.every((g) => g == _gaps.first);
-      if (allSame) {
-        containerLayout['itemSpacing'] = _gaps.first;
-      } else {
-        final freq = <double, int>{};
-        for (final g in _gaps) freq[g] = (freq[g] ?? 0) + 1;
-        double bestGap = _gaps.first;
-        int bestCount = 0;
-        freq.forEach((g, count) {
-          if (count > bestCount) {
-            bestGap = g;
-            bestCount = count;
-          }
-        });
-        containerLayout['itemSpacing'] = bestGap;
-      }
+      });
+      containerLayout['itemSpacing'] = bestGap;
     }
   }
 
@@ -1712,6 +1905,7 @@ String figmaExtractorEntryPoint() {
     _svgBoxTargets.clear();
     _widgetNameByRenderObject.clear();
     _customPaintCaptures.clear();
+    _blurInfoByRenderObject.clear();
 
     final rootElement = WidgetsBinding.instance.renderViewElement;
     if (rootElement != null) {
@@ -1780,6 +1974,7 @@ String figmaExtractorEntryPoint() {
 Future<String> _figmaExportWithImagesAsync() async {
   _imageDataByNode.clear();
   _customPaintCaptures.clear();
+  _blurInfoByRenderObject.clear();
 
   // Phase 0: Element tree 순회 → _customPaintCaptures 등록 (pre-capture에 필요)
   final rootElement = WidgetsBinding.instance.renderViewElement;
