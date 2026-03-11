@@ -68,7 +68,10 @@ function normalizeSchemaV2(node) {
 
   // layoutMode (top-level → properties)
   if (node.layoutMode && !props.layoutMode) {
-    if (node.layoutMode !== "NONE") {
+    if (node.layoutMode === "STACK") {
+      props.isStack = true;
+      // STACK → Figma NONE (절대 위치 배치)
+    } else if (node.layoutMode !== "NONE") {
       props.layoutMode = node.layoutMode === "ROW" ? "HORIZONTAL" :
                          node.layoutMode === "COLUMN" ? "VERTICAL" :
                          node.layoutMode === "WRAP" ? "HORIZONTAL" :
@@ -160,6 +163,13 @@ function normalizeSchemaV2(node) {
   if (childLay.fixedHeight) {
     props.fixedHeight = true;
   }
+  // Stack 자식: positioned 정보 보존
+  if (childLay.positioned) {
+    props.positioned = childLay.positioned;
+  }
+  // sizingH/sizingV 보존
+  if (childLay.sizingH) props.sizingH = childLay.sizingH;
+  if (childLay.sizingV) props.sizingV = childLay.sizingV;
 
   node.properties = props;
 
@@ -522,6 +532,9 @@ function inferMissingLayout(node) {
   if (node.type !== "Frame") return;
 
   var props = node.properties || {};
+
+  // Stack은 절대 배치 → layout 추론 건너뛰기
+  if (props.isStack) return;
 
   // 자식이 2개 이상이면 위치 기준으로 정렬 + 방향 추론
   if (children.length >= 2) {
@@ -1107,12 +1120,31 @@ function renderNode(node, parentFigma, parentLayoutDir) {
   // 자식 재귀 (Frame만)
   if (node.type === "Frame" && !props.isIconBox && !props.isVectorCandidate) {
     var children = node.children || [];
-    var childLayoutDir = props.layoutMode || "VERTICAL";
+    var childLayoutDir = props.isStack ? "NONE" : (props.layoutMode || "VERTICAL");
     for (var i = 0; i < children.length; i++) {
       try {
         renderNode(children[i], figNode, childLayoutDir);
       } catch (e) {
         console.warn("[FlutterPlugin] 자식 렌더링 실패:", e);
+      }
+    }
+
+    // Stack 자식: 부모 rect 기준 상대 좌표로 절대 배치
+    if (props.isStack) {
+      var parentRect = node.rect || {};
+      var px = typeof parentRect.x === "number" ? parentRect.x : 0;
+      var py = typeof parentRect.y === "number" ? parentRect.y : 0;
+      for (var si = 0; si < children.length; si++) {
+        var childRect = (children[si] || {}).rect || {};
+        var cx = typeof childRect.x === "number" ? childRect.x : 0;
+        var cy = typeof childRect.y === "number" ? childRect.y : 0;
+        try {
+          var childFig = figNode.children[si];
+          if (childFig) {
+            childFig.x = cx - px;
+            childFig.y = cy - py;
+          }
+        } catch (e) {}
       }
     }
   }
@@ -1258,15 +1290,27 @@ function applyGradient(frame, props) {
 function buildLinearGradientTransform(bx, by, ex, ey) {
   var dx = ex - bx;
   var dy = ey - by;
-  var len = Math.sqrt(dx * dx + dy * dy) || 1;
-  var ux = dx / len;
-  var uy = dy / len;
-  var vx = -uy;
-  var vy = ux;
-  return [
-    [ux * len, vx * len, bx],
-    [uy * len, vy * len, by]
+  var len2 = dx * dx + dy * dy;
+  if (len2 < 0.0001) {
+    return [[1, 0, 0], [0, 1, 0]];
+  }
+  // Transform maps ELEMENT space → GRADIENT space
+  // u = dot(p - begin, dir) / len^2  → color position (0=start, 1=end)
+  // v = dot(p - begin, perp) / len^2 + 0.5  → perpendicular (centered)
+  var a = dx / len2;
+  var b = dy / len2;
+  var tx = -(bx * dx + by * dy) / len2;
+  var c = -dy / len2;
+  var d = dx / len2;
+  var ty = (bx * dy - by * dx) / len2 + 0.5;
+  var result = [
+    [a, b, tx],
+    [c, d, ty],
   ];
+  console.log("[GradientTransform] begin=(" + bx + "," + by + ") end=(" + ex + "," + ey + ")");
+  console.log("[GradientTransform] len2=" + len2 + " a=" + a + " b=" + b + " tx=" + tx);
+  console.log("[GradientTransform] result:", JSON.stringify(result));
+  return result;
 }
 
 function buildRadialGradientTransform(cx, cy, r) {
@@ -1288,6 +1332,11 @@ function buildSweepGradientTransform(cx, cy) {
 // applyAutoLayout: layoutMode, spacing, padding, alignment
 // ----------------------------
 function applyAutoLayout(frame, props) {
+  // Stack은 절대 배치 → auto-layout 없음
+  if (props.isStack) {
+    frame.layoutMode = "NONE";
+    return;
+  }
   var mode = props.layoutMode;
   if (!mode) {
     // layoutMode 없는 프레임(SizedBox 스페이서 등)은 auto-layout 없이 유지
@@ -1341,6 +1390,9 @@ function applyAutoLayout(frame, props) {
 function applySizing(figNode, jsonNode, parentLayoutDir) {
   try {
     var props = jsonNode.properties || {};
+
+    // Stack(NONE) 자식: auto-layout sizing 불필요, 절대 위치 사용
+    if (parentLayoutDir === "NONE") return;
 
     // 고정 크기 요소: 항상 FIXED, layoutGrow 금지
     // 단, flexGrow(Expanded/Flexible)가 있으면 flex 우선 (mergeWrapperChains로 fixedSize+flexGrow 병합 가능)

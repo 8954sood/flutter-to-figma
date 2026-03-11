@@ -762,6 +762,48 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       try {
         visual['content'] = node.text.toPlainText();
         visual['textAlign'] = node.textAlign.toString().split('.').last;
+
+        // RichText children: 개별 TextSpan 스타일을 textSpans 배열로 내보내기
+        if (inlineSpan is TextSpan) {
+          final spanChildren = inlineSpan.children;
+          if (spanChildren != null && spanChildren.isNotEmpty) {
+            final spans = <Map<String, dynamic>>[];
+            int charOffset = 0;
+            for (final child in spanChildren) {
+              if (child is TextSpan) {
+                final spanText = child.text ?? '';
+                if (spanText.isNotEmpty) {
+                  final spanMap = <String, dynamic>{
+                    'start': charOffset,
+                    'end': charOffset + spanText.length,
+                  };
+                  final s = child.style;
+                  if (s != null) {
+                    if (s.fontSize != null) spanMap['fontSize'] = s.fontSize;
+                    if (s.fontWeight != null) spanMap['fontWeight'] = s.fontWeight.toString();
+                    if (s.color != null) spanMap['color'] = _colorToHex(s.color);
+                    if (s.fontFamily != null) spanMap['fontFamily'] = s.fontFamily;
+                    if (s.letterSpacing != null) spanMap['letterSpacing'] = s.letterSpacing;
+                    if (s.height != null) spanMap['lineHeightMultiplier'] = s.height;
+                  }
+                  spans.add(spanMap);
+                  charOffset += spanText.length;
+                }
+              }
+            }
+            if (spans.isNotEmpty) {
+              visual['textSpans'] = spans;
+            }
+            // 최상위 style이 없으면 첫 번째 자식 style을 fallback
+            if (style == null || (style.fontSize == null && style.fontWeight == null)) {
+              final first = spanChildren.first;
+              if (first is TextSpan && first.style != null) {
+                style = first.style;
+              }
+            }
+          }
+        }
+
         if (style != null) {
           visual['fontFamily'] = style.fontFamily;
           visual['fontSize'] = style.fontSize;
@@ -788,56 +830,8 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         visual['content'] = plainText;
         visual['textAlign'] = node.textAlign.toString().split('.').last;
         TextStyle? style;
-        final bool isTS = text is TextSpan;
-        if (!isTS) {
-          print('[CRAWL-DEBUG] text is NOT TextSpan, runtimeType=${text.runtimeType}');
-        }
-        if (isTS) {
-          final textSpan = text as TextSpan;
-          style = textSpan.style;
-
-          // RichText children: 개별 TextSpan 스타일을 textSpans 배열로 내보내기
-          try {
-            final spanChildren = textSpan.children;
-            if (spanChildren != null && spanChildren.isNotEmpty) {
-              final spans = <Map<String, dynamic>>[];
-              int charOffset = 0;
-              for (final child in spanChildren) {
-                if (child is TextSpan) {
-                  final spanText = child.text ?? '';
-                  if (spanText.isNotEmpty) {
-                    final spanMap = <String, dynamic>{
-                      'start': charOffset,
-                      'end': charOffset + spanText.length,
-                    };
-                    final s = child.style;
-                    if (s != null) {
-                      if (s.fontSize != null) spanMap['fontSize'] = s.fontSize;
-                      if (s.fontWeight != null) spanMap['fontWeight'] = s.fontWeight.toString();
-                      if (s.color != null) spanMap['color'] = _colorToHex(s.color);
-                      if (s.fontFamily != null) spanMap['fontFamily'] = s.fontFamily;
-                      if (s.letterSpacing != null) spanMap['letterSpacing'] = s.letterSpacing;
-                      if (s.height != null) spanMap['lineHeightMultiplier'] = s.height;
-                    }
-                    spans.add(spanMap);
-                    charOffset += spanText.length;
-                  }
-                }
-              }
-              if (spans.isNotEmpty) {
-                visual['textSpans'] = spans;
-              }
-              // 최상위 style이 없으면 첫 번째 자식 style을 fallback
-              if (style == null || (style.fontSize == null && style.fontWeight == null)) {
-                final first = spanChildren.first;
-                if (first is TextSpan && first.style != null) {
-                  style = first.style;
-                }
-              }
-            }
-          } catch (e) {
-            print('[CRAWL-DEBUG] textSpans inner error: $e');
-          }
+        if (text is TextSpan) {
+          style = text.style;
         }
         if (style != null) {
           visual['fontFamily'] = style.fontFamily;
@@ -850,9 +844,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           }
         }
       }
-    } catch (e) {
-      print('[CRAWL-DEBUG] RenderParagraph outer error: $e');
-    }
+    } catch (_) {}
   }
   // ---------------------------------------------------
   // [2] Image
@@ -2018,6 +2010,27 @@ String figmaExtractorEntryPoint() {
 }
 
 /// =======================================================
+/// 5.5. 스크롤 위치 수집
+/// =======================================================
+
+List<ScrollPosition> _collectScrollPositions(Element? rootElement) {
+  final List<ScrollPosition> positions = [];
+  if (rootElement == null) return positions;
+  void visit(Element element) {
+    final widget = element.widget;
+    if (widget is Scrollable) {
+      try {
+        final scrollable = (element as StatefulElement).state as ScrollableState;
+        positions.add(scrollable.position);
+      } catch (_) {}
+    }
+    element.visitChildren(visit);
+  }
+  rootElement.visitChildren(visit);
+  return positions;
+}
+
+/// =======================================================
 /// 6. Async export (이미지 pre-capture 포함)
 /// =======================================================
 
@@ -2036,7 +2049,30 @@ Future<String> _figmaExportWithImagesAsync() async {
 
   final root = RendererBinding.instance.renderView;
 
-  // Phase 1: async pre-capture (_customPaintCaptures가 이미 채워진 상태)
+  // Phase 0.5: 스크롤 뷰 pre-scroll → viewport 밖 위젯도 paint 강제
+  final scrollPositions = _collectScrollPositions(rootElement);
+  final Map<ScrollPosition, double> originalOffsets = {};
+  for (final pos in scrollPositions) {
+    originalOffsets[pos] = pos.pixels;
+  }
+  for (final pos in scrollPositions) {
+    if (pos.maxScrollExtent <= 0) continue;
+    final viewportDim = pos.viewportDimension;
+    double current = 0;
+    while (current < pos.maxScrollExtent) {
+      current = (current + viewportDim).clamp(0.0, pos.maxScrollExtent);
+      pos.jumpTo(current);
+      await WidgetsBinding.instance.endOfFrame;
+      await _preCaptureImages(root);
+    }
+  }
+  // 원래 스크롤 위치로 복원
+  for (final pos in scrollPositions) {
+    pos.jumpTo(originalOffsets[pos] ?? 0.0);
+  }
+  await WidgetsBinding.instance.endOfFrame;
+
+  // Phase 1: async pre-capture (상단 viewport 위젯 포함)
   await _preCaptureImages(root);
 
   // Phase 2: 기존 sync 크롤 (figmaExtractorEntryPoint 재사용)
