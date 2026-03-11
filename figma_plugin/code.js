@@ -6,6 +6,7 @@
 figma.showUI(__html__, { width: 360, height: 380 });
 
 var loadedFonts = {}; // "family::style" → true
+var resolvedFonts = {}; // "family::originalStyle" → actual loaded style
 
 // ----------------------------
 // UI 메시지 핸들러
@@ -871,38 +872,63 @@ async function preloadFonts(rootNode) {
   addFont({ family: "Inter", style: "Bold" });
 
   var keys = Object.keys(fontSet);
+
+  // 후보 스타일 순회하며 로딩 시도
+  async function tryLoadFont(font) {
+    var candidates = font._candidates || [font.style];
+    var family = font.family;
+
+    for (var ci = 0; ci < candidates.length; ci++) {
+      var style = candidates[ci];
+      var key = family + "::" + style;
+      if (loadedFonts[key]) {
+        // 이미 로드된 스타일이 있으면 resolvedFonts에 매핑
+        resolvedFonts[family + "::" + font.style] = style;
+        return;
+      }
+      try {
+        await figma.loadFontAsync({ family: family, style: style });
+        loadedFonts[key] = true;
+        resolvedFonts[family + "::" + font.style] = style;
+        console.log("[FlutterPlugin] loaded font:", family, style);
+        return;
+      } catch (e) {
+        // 이 스타일은 없음, 다음 후보 시도
+      }
+    }
+
+    // 모든 후보 실패 → Inter fallback
+    console.warn("[FlutterPlugin] all candidates failed for", family, font.style, "→ Inter fallback");
+    for (var ci = 0; ci < candidates.length; ci++) {
+      var style = candidates[ci];
+      var fbKey = "Inter::" + style;
+      if (loadedFonts[fbKey]) {
+        resolvedFonts[family + "::" + font.style] = style;
+        resolvedFonts[family + "::" + font.style + "::family"] = "Inter";
+        return;
+      }
+      try {
+        await figma.loadFontAsync({ family: "Inter", style: style });
+        loadedFonts[fbKey] = true;
+        resolvedFonts[family + "::" + font.style] = style;
+        resolvedFonts[family + "::" + font.style + "::family"] = "Inter";
+        return;
+      } catch (e) {}
+    }
+    // 최종 fallback
+    try {
+      await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+      loadedFonts["Inter::Regular"] = true;
+    } catch (e) {}
+    resolvedFonts[family + "::" + font.style] = "Regular";
+    resolvedFonts[family + "::" + font.style + "::family"] = "Inter";
+  }
+
   var promises = [];
-
   for (var i = 0; i < keys.length; i++) {
-    (function () {
-      var font = fontSet[keys[i]];
-      var key = font.family + "::" + font.style;
-      if (loadedFonts[key]) return;
-      var p = figma
-        .loadFontAsync(font)
-        .then(function () {
-          loadedFonts[key] = true;
-        })
-        .catch(function (e) {
-          console.warn("[FlutterPlugin] loadFontAsync failed", font, e);
-          // fallback: Inter로 시도
-          if (font.family !== "Inter") {
-            var fallback = { family: "Inter", style: font.style };
-            var fbKey = "Inter::" + font.style;
-            if (!loadedFonts[fbKey]) {
-              return figma.loadFontAsync(fallback).then(function () {
-                loadedFonts[fbKey] = true;
-              }).catch(function () {});
-            }
-          }
-        });
-      promises.push(p);
-    })();
+    promises.push(tryLoadFont(fontSet[keys[i]]));
   }
-
-  if (promises.length > 0) {
-    await Promise.all(promises);
-  }
+  await Promise.all(promises);
 }
 
 // ============================================================
@@ -1615,20 +1641,31 @@ function parseFlutterColor(hex) {
 // --- 폰트 이름 매핑 ---
 function resolveFont(family, fontWeight) {
   var key = String(fontWeight).split(".").pop() || "w400";
-  var map = {
-    w100: "Thin",
-    w200: "Extra light",
-    w300: "Light",
-    w400: "Regular",
-    w500: "Medium",
-    w600: "SemiBold",
-    w700: "Bold",
-    w800: "ExtraBold",
-    w900: "Black",
+  var candidates = {
+    w100: ["Thin", "Hairline", "ExtraThin"],
+    w200: ["ExtraLight", "UltraLight", "Extra Light", "Ultra Light"],
+    w300: ["Light"],
+    w400: ["Regular", "Normal"],
+    w500: ["Medium"],
+    w600: ["SemiBold", "Semi Bold", "DemiBold"],
+    w700: ["Bold"],
+    w800: ["ExtraBold", "UltraBold", "Extra Bold", "Ultra Bold"],
+    w900: ["Black", "Heavy"],
   };
-  var style = map[key] || "Regular";
-  if (!family) return { family: "Inter", style: style };
-  return { family: family, style: style };
+  var styles = candidates[key] || ["Regular"];
+  var fam = family || "Inter";
+  var firstStyle = styles[0];
+
+  // preloadFonts에서 실제 로드된 스타일 확인
+  var resolveKey = fam + "::" + firstStyle;
+  var actualStyle = resolvedFonts[resolveKey];
+  var actualFamily = resolvedFonts[resolveKey + "::family"] || fam;
+  if (actualStyle) {
+    return { family: actualFamily, style: actualStyle };
+  }
+
+  // preload 전 호출 (수집 단계) → 후보 리스트 포함
+  return { family: fam, style: firstStyle, _candidates: styles };
 }
 
 // --- TextAlign 매핑 ---
