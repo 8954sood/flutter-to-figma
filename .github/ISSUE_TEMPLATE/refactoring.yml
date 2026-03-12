@@ -1,0 +1,29 @@
+name: Refactoring / Improvement
+description: Suggest a code improvement, cleanup, or architectural change
+labels: ["refactoring"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What would you like to improve and why?
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current Behavior
+      description: How does it work now?
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed Change
+      description: How should it work after the change?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any related files, links, or notes.
