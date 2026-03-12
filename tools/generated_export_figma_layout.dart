@@ -2563,73 +2563,70 @@ void _log(String msg) => stderr.writeln(msg);
 // VM Service URI 자동 탐지
 // =============================================================
 
-/// Strategy 1 (가장 정확): ps에서 development-service 프로세스 찾기
-/// → raw VM Service URI 추출 → HTTP redirect → DDS WS URI (토큰 포함)
-Future<String?> _discoverViaDds() async {
-  _log('[Discovery] ps에서 development-service 프로세스 탐색...');
-
-  final ps = await Process.run('ps', ['-eo', 'pid,args']);
-  final lines = (ps.stdout as String).split('\n');
-
-  String? rawVmUri;
-  for (final line in lines) {
-    if (!line.contains('development-service')) continue;
-    if (line.contains('grep')) continue;
-    final match = RegExp(r'vm-service-uri=(http://[^\s]+)').firstMatch(line);
-    if (match != null) {
-      rawVmUri = match.group(1)!;
-      _log('[Discovery] Raw VM Service URI: $rawVmUri');
-      break;
-    }
-  }
-
-  if (rawVmUri == null) return null;
-
-  // HTTP GET → redirect 따라가서 DDS WS URI 얻기
-  _log('[Discovery] HTTP redirect 추적 중...');
+/// raw VM Service URI (http) → DDS WS URI 변환
+Future<String?> _resolveToWsUri(String rawVmUri) async {
   final client = HttpClient();
-  client.connectionTimeout = const Duration(seconds: 5);
+  client.connectionTimeout = const Duration(seconds: 3);
 
   try {
     final request = await client.getUrl(Uri.parse(rawVmUri));
     request.followRedirects = false;
     final response = await request.close();
-    // body 소비
     await response.drain<void>();
-
-    _log('[Discovery] HTTP ${response.statusCode}');
 
     if (response.statusCode == 302 || response.statusCode == 301) {
       final redirectUrl = response.headers.value('location');
-      _log('[Discovery] Redirect → $redirectUrl');
       if (redirectUrl != null) {
         final wsUri = Uri.parse(redirectUrl).queryParameters['uri'];
-        if (wsUri != null) {
-          _log('[Discovery] DDS WS URI: $wsUri');
-          return wsUri;
-        }
+        if (wsUri != null) return wsUri;
       }
     }
-  } catch (e) {
-    _log('[Discovery] HTTP 요청 실패: $e');
+  } catch (_) {
   } finally {
     client.close();
   }
 
-  // redirect 실패 시 raw URI를 ws로 변환해서 시도
+  // redirect 실패 시 raw URI를 ws로 변환
   var fallback = rawVmUri
       .replaceFirst('http://', 'ws://')
       .replaceFirst('https://', 'wss://');
   if (!fallback.endsWith('/ws')) {
     fallback = fallback.endsWith('/') ? '${fallback}ws' : '$fallback/ws';
   }
-  _log('[Discovery] Redirect 실패 → fallback: $fallback');
   return fallback;
 }
 
-/// Strategy 2 (fallback): lsof로 Dart 프로세스 포트 스캔
-Future<String?> _scanDartPorts() async {
+/// ps에서 모든 development-service 프로세스의 WS URI 수집
+Future<List<String>> _discoverAllDds() async {
+  _log('[Discovery] ps에서 development-service 프로세스 탐색...');
+
+  final ps = await Process.run('ps', ['-eo', 'pid,args']);
+  final lines = (ps.stdout as String).split('\n');
+
+  final rawUris = <String>[];
+  for (final line in lines) {
+    if (!line.contains('development-service')) continue;
+    if (line.contains('grep')) continue;
+    final match = RegExp(r'vm-service-uri=(http://[^\s]+)').firstMatch(line);
+    if (match != null) {
+      rawUris.add(match.group(1)!);
+    }
+  }
+
+  final wsUris = <String>[];
+  for (final raw in rawUris) {
+    final ws = await _resolveToWsUri(raw);
+    if (ws != null) wsUris.add(ws);
+  }
+
+  _log('[Discovery] ${wsUris.length}개의 Flutter 앱 발견');
+  return wsUris;
+}
+
+/// lsof로 Dart 프로세스 포트 스캔 (fallback)
+Future<List<String>> _scanDartPorts() async {
   _log('[Discovery] lsof 포트 스캔...');
+  final uris = <String>[];
   try {
     final result = await Process.run('lsof', ['-i', '-P', '-n']);
     for (final line in (result.stdout as String).split('\n')) {
@@ -2637,26 +2634,45 @@ Future<String?> _scanDartPorts() async {
       if (!line.contains('LISTEN')) continue;
       final m = RegExp(r':(\d+)\s+\(LISTEN\)').firstMatch(line);
       if (m != null) {
-        final uri = 'ws://127.0.0.1:${m.group(1)}/ws';
-        _log('[Discovery] lsof에서 포트 발견: $uri');
-        return uri;
+        uris.add('ws://127.0.0.1:${m.group(1)}/ws');
       }
     }
   } catch (_) {}
-  return null;
+  return uris;
 }
 
+/// VM Service 자동 탐색. 여러 앱이면 사용자가 선택.
 Future<String?> discoverVmServiceUri() async {
   _log('[Discovery] VM Service 자동 탐색 중...');
 
-  // 1차: DDS 프로세스 → redirect → 정확한 WS URI (토큰 포함)
-  final fromDds = await _discoverViaDds();
-  if (fromDds != null) return fromDds;
+  // 모든 후보 수집
+  var candidates = await _discoverAllDds();
+  if (candidates.isEmpty) {
+    candidates = await _scanDartPorts();
+  }
 
-  // 2차: lsof 포트 스캔 (토큰 없이 시도, --disable-service-auth-codes 필요)
-  final fromPort = await _scanDartPorts();
-  if (fromPort != null) return fromPort;
+  if (candidates.isEmpty) return null;
 
+  if (candidates.length == 1) {
+    _log('[Discovery] 앱 1개 발견: ${candidates[0]}');
+    return candidates[0];
+  }
+
+  // 여러 앱이 실행 중 → 사용자 선택
+  _log('');
+  _log('실행 중인 Flutter 앱이 ${candidates.length}개 발견되었습니다:');
+  for (int i = 0; i < candidates.length; i++) {
+    _log('  [${i + 1}] ${candidates[i]}');
+  }
+  _log('');
+  stderr.write('연결할 앱 번호를 선택하세요 (1-${candidates.length}): ');
+  final input = stdin.readLineSync()?.trim();
+  final index = int.tryParse(input ?? '');
+  if (index != null && index >= 1 && index <= candidates.length) {
+    return candidates[index - 1];
+  }
+
+  _log('[ERROR] 잘못된 선택입니다.');
   return null;
 }
 
@@ -2666,8 +2682,9 @@ Future<String?> discoverVmServiceUri() async {
 
 /// 내장 크롤러 소스에서 버전을 추출
 String? _extractVersion(String source) {
-  final match =
-      RegExp(r"const\s+figmaCrawlerVersion\s*=\s*'([^']+)'").firstMatch(source);
+  final match = RegExp(
+    r"const\s+figmaCrawlerVersion\s*=\s*'([^']+)'",
+  ).firstMatch(source);
   return match?.group(1);
 }
 
@@ -2809,12 +2826,10 @@ Future<void> main(List<String> args) async {
       for (int i = 0; i < 120; i++) {
         await Future.delayed(const Duration(milliseconds: 500));
         try {
-          final newVm =
-              await rpcCall(ws, 'getVM') as Map<String, dynamic>;
-          final newIsolates =
-              (newVm['isolates'] as List).cast<Map<String, dynamic>>();
-          if (newIsolates.isNotEmpty &&
-              newIsolates[0]['id'] != oldIsolateId) {
+          final newVm = await rpcCall(ws, 'getVM') as Map<String, dynamic>;
+          final newIsolates = (newVm['isolates'] as List)
+              .cast<Map<String, dynamic>>();
+          if (newIsolates.isNotEmpty && newIsolates[0]['id'] != oldIsolateId) {
             isolateId = newIsolates[0]['id'] as String;
             restarted = true;
             break;
