@@ -181,8 +181,22 @@ Future<String?> discoverVmServiceUri() async {
 // 크롤러 주입 (내장 소스 → 파일 생성 + import 추가)
 // =============================================================
 
-/// 크롤러 주입. 이미 주입돼 있으면 false, 새로 주입하면 true 반환.
-bool injectCrawler(String projectPath) {
+/// 내장 크롤러 소스에서 버전을 추출
+String? _extractVersion(String source) {
+  final match =
+      RegExp(r"const\s+figmaCrawlerVersion\s*=\s*'([^']+)'").firstMatch(source);
+  return match?.group(1);
+}
+
+/// 크롤러 주입 결과
+enum InjectResult {
+  fresh, // 새로 주입 (import 추가됨) → hot restart 필요
+  updated, // 버전 업데이트 (파일만 교체) → hot reload 필요
+  upToDate, // 최신 상태 → 리로드 불필요
+}
+
+/// 크롤러 주입.
+InjectResult injectCrawler(String projectPath) {
   final destPath = '$projectPath/lib/figma_temp_crawler.dart';
   final mainPath = '$projectPath/lib/main.dart';
 
@@ -190,15 +204,35 @@ bool injectCrawler(String projectPath) {
     throw Exception('$mainPath 파일을 찾을 수 없습니다.');
   }
 
-  // 내장 소스를 파일로 쓰기 (항상 최신으로 덮어쓰기)
-  File(destPath).writeAsStringSync(_crawlerSource);
-  _log('[Inject] 크롤러 생성 → $destPath');
+  final destFile = File(destPath);
+  final newVersion = _extractVersion(_crawlerSource);
+
+  // 기존 파일이 있으면 버전 비교
+  if (destFile.existsSync()) {
+    final existing = destFile.readAsStringSync();
+    final oldVersion = _extractVersion(existing);
+
+    if (oldVersion != null && oldVersion == newVersion) {
+      // import도 이미 있는지 확인
+      final mainCode = File(mainPath).readAsStringSync();
+      if (mainCode.contains("import 'figma_temp_crawler.dart'")) {
+        _log('[Inject] 크롤러 v$newVersion — 최신 상태');
+        return InjectResult.upToDate;
+      }
+    } else {
+      _log('[Inject] 크롤러 업데이트: v$oldVersion → v$newVersion');
+    }
+  }
+
+  // 크롤러 파일 쓰기
+  destFile.writeAsStringSync(_crawlerSource);
+  _log('[Inject] 크롤러 v$newVersion → $destPath');
 
   // main.dart에 import 추가
   var mainCode = File(mainPath).readAsStringSync();
   if (mainCode.contains("import 'figma_temp_crawler.dart'")) {
-    _log('[Inject] import 이미 존재 → hot reload 불필요');
-    return false;
+    _log('[Inject] import 이미 존재 → 파일만 업데이트');
+    return InjectResult.updated;
   }
 
   final importRe = RegExp(
@@ -218,7 +252,7 @@ bool injectCrawler(String projectPath) {
 
   File(mainPath).writeAsStringSync(mainCode);
   _log('[Inject] main.dart에 import 추가 완료');
-  return true;
+  return InjectResult.fresh;
 }
 
 // =============================================================
@@ -254,7 +288,7 @@ Future<void> main(List<String> args) async {
   }
 
   // ---- 크롤러 주입 ----
-  final needsReload = injectCrawler(projectPath);
+  final injectResult = injectCrawler(projectPath);
 
   // ---- WebSocket 연결 ----
   _log('[Connect] $vmUri');
@@ -273,15 +307,45 @@ Future<void> main(List<String> args) async {
     final vm = await rpcCall(ws, 'getVM') as Map<String, dynamic>;
     final isolates = (vm['isolates'] as List).cast<Map<String, dynamic>>();
     if (isolates.isEmpty) throw Exception('VM에 isolate가 없습니다.');
-    final isolateId = isolates[0]['id'] as String;
+    var isolateId = isolates[0]['id'] as String;
     _log('[VM] isolate: $isolateId');
 
-    // ---- Hot Reload (필요 시) ----
-    if (needsReload) {
-      _log('[HotReload] reloadSources 호출 중...');
-      await rpcCall(ws, 'reloadSources', {'isolateId': isolateId});
-      await Future.delayed(const Duration(seconds: 3));
-      _log('[HotReload] 완료');
+    // ---- 크롤러 변경 시 Hot Restart 대기 ----
+    if (injectResult != InjectResult.upToDate) {
+      _log('');
+      _log('╔══════════════════════════════════════════════════════════╗');
+      _log('║  크롤러가 업데이트되었습니다.                              ║');
+      _log('║  Flutter 앱에서 Hot Restart를 실행해 주세요.              ║');
+      _log('║  (터미널에서 Shift+R 또는 IDE의 Restart 버튼)            ║');
+      _log('║  대기 중... (완료되면 자동으로 계속 진행합니다)           ║');
+      _log('╚══════════════════════════════════════════════════════════╝');
+      _log('');
+
+      final oldIsolateId = isolateId;
+      bool restarted = false;
+      for (int i = 0; i < 120; i++) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        try {
+          final newVm =
+              await rpcCall(ws, 'getVM') as Map<String, dynamic>;
+          final newIsolates =
+              (newVm['isolates'] as List).cast<Map<String, dynamic>>();
+          if (newIsolates.isNotEmpty &&
+              newIsolates[0]['id'] != oldIsolateId) {
+            isolateId = newIsolates[0]['id'] as String;
+            restarted = true;
+            break;
+          }
+        } catch (_) {}
+      }
+
+      if (!restarted) {
+        _log('[ERROR] 60초 내에 앱 재시작이 감지되지 않았습니다.');
+        _log('Flutter 앱을 재시작한 뒤 이 도구를 다시 실행하세요.');
+        exit(1);
+      }
+      _log('[HotRestart] 감지 완료 → 새 isolate: $isolateId');
+      await Future.delayed(const Duration(seconds: 2));
     }
 
     // ---- 크롤러 라이브러리 찾기 ----

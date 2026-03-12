@@ -57,6 +57,8 @@ dart run tools/generated_export_figma_layout.dart
 
 실행 중인 Flutter 앱을 자동 탐색하고, 크롤러를 주입하여 레이아웃 JSON을 출력합니다.
 
+> **Hot Restart 필요:** 크롤러가 처음 주입되거나 새 버전으로 업데이트되면, 도구가 Hot Restart를 요청합니다. Flutter 터미널에서 **Shift+R**을 누르세요 (또는 IDE의 Restart 버튼). 도구가 재시작을 자동 감지하고 계속 진행합니다. 크롤러 버전이 최신이면 이 단계는 생략됩니다.
+
 ### 5. Figma에서 가져오기
 
 1. Figma 파일을 엽니다

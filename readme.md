@@ -57,6 +57,8 @@ dart run tools/generated_export_figma_layout.dart
 
 The tool auto-discovers the running Flutter app, injects the crawler, and outputs the layout JSON.
 
+> **Hot Restart required:** When the crawler is first injected or updated to a new version, the tool will prompt you to hot restart. Press **Shift+R** in the Flutter terminal (or use the IDE restart button). The tool detects the restart automatically and continues. If the crawler version is already up to date, this step is skipped.
+
 ### 5. Import into Figma
 
 1. Open a Figma file

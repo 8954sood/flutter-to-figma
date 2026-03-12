@@ -11,6 +11,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+const figmaCrawlerVersion = '0.2.0';
+
 /// =======================================================
 /// 0. 유틸 & 전역 상태
 /// =======================================================
