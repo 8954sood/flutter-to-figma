@@ -702,7 +702,8 @@ function recalcItemSpacing(node) {
   }
 
   if (gaps.length === 0) {
-    // 모든 gap이 flexGrow로 skip됨 → spacing은 0 (gap은 flex 분배)
+    // 모든 gap이 flexGrow로 skip됨 → 크롤러에서 설정한 기존 spacing 보존
+    if (typeof props.itemSpacing === "number" && props.itemSpacing > 0) return;
     props.itemSpacing = 0;
     node.properties = props;
     return;
