@@ -100,6 +100,7 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
     }
     ro.visitChildren(find);
   }
+
   find(root);
   debugPrint('[ShaderMask] found ${nodes.length} nodes');
 
@@ -127,7 +128,9 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
       );
       final picture = recorder.endRecording();
       final image = await picture.toImage(sw, sh);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final byteData = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       image.dispose();
       if (byteData == null) {
         debugPrint('[ShaderMask] byteData null');
@@ -147,7 +150,10 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
       }
 
       double colorDist(Color a, Color b) =>
-          ((a.red - b.red).abs() + (a.green - b.green).abs() + (a.blue - b.blue).abs()).toDouble();
+          ((a.red - b.red).abs() +
+                  (a.green - b.green).abs() +
+                  (a.blue - b.blue).abs())
+              .toDouble();
 
       // 방향 판별
       const n = 6;
@@ -203,6 +209,7 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
         _shaderMaskGradients[obj] = gradient;
         obj.visitChildren(mapAll);
       }
+
       node.visitChildren(mapAll);
     } catch (e, st) {
       debugPrint('[ShaderMask] ERROR: $e\n$st');
@@ -291,7 +298,10 @@ Future<void> _preCaptureImages(RenderObject node) async {
         final outW = (w * pr).round();
         final outH = (h * pr).round();
         final recorder = ui.PictureRecorder();
-        final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
+        final canvas = Canvas(
+          recorder,
+          Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
+        );
         canvas.scale(pr);
         painter.paint(canvas, Size(w, h));
         final picture = recorder.endRecording();
@@ -549,9 +559,16 @@ void _collectDesignInfoFromElements(Element element) {
 
   // Checkbox / Switch → renderObject와 하위 자식 모두 캡처 대상 등록
   const captureWidgets = {
-    'Checkbox', 'Switch', 'CupertinoSwitch',
-    'Slider', 'CircularProgressIndicator', 'LinearProgressIndicator',
-    'ChoiceChip', 'FilterChip', 'InputChip', 'ActionChip',
+    'Checkbox',
+    'Switch',
+    'CupertinoSwitch',
+    'Slider',
+    'CircularProgressIndicator',
+    'LinearProgressIndicator',
+    'ChoiceChip',
+    'FilterChip',
+    'InputChip',
+    'ActionChip',
   };
   if (captureWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
@@ -616,7 +633,9 @@ void _collectDesignInfoFromElements(Element element) {
         if (radians.abs() > 0.001) {
           final degrees = radians * 180.0 / math.pi;
           _rotationByRenderObject[ro] = degrees;
-          debugPrint('[Transform] captured rotation=${degrees.toStringAsFixed(2)}° for $ro');
+          debugPrint(
+            '[Transform] captured rotation=${degrees.toStringAsFixed(2)}° for $ro',
+          );
         }
       }
     } catch (e) {
@@ -672,12 +691,11 @@ Map<String, dynamic>? _extractGradient(dynamic gradient) {
         stops.add(i / (colors.length - 1));
       }
     }
-  } catch (_) { return null; }
+  } catch (_) {
+    return null;
+  }
 
-  final map = <String, dynamic>{
-    'colors': colors,
-    'stops': stops,
-  };
+  final map = <String, dynamic>{'colors': colors, 'stops': stops};
 
   final typeName = gradient.runtimeType.toString();
   if (typeName.contains('LinearGradient')) {
@@ -1000,11 +1018,16 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
                   final s = child.style;
                   if (s != null) {
                     if (s.fontSize != null) spanMap['fontSize'] = s.fontSize;
-                    if (s.fontWeight != null) spanMap['fontWeight'] = s.fontWeight.toString();
-                    if (s.color != null) spanMap['color'] = _colorToHex(s.color);
-                    if (s.fontFamily != null) spanMap['fontFamily'] = s.fontFamily;
-                    if (s.letterSpacing != null) spanMap['letterSpacing'] = s.letterSpacing;
-                    if (s.height != null) spanMap['lineHeightMultiplier'] = s.height;
+                    if (s.fontWeight != null)
+                      spanMap['fontWeight'] = s.fontWeight.toString();
+                    if (s.color != null)
+                      spanMap['color'] = _colorToHex(s.color);
+                    if (s.fontFamily != null)
+                      spanMap['fontFamily'] = s.fontFamily;
+                    if (s.letterSpacing != null)
+                      spanMap['letterSpacing'] = s.letterSpacing;
+                    if (s.height != null)
+                      spanMap['lineHeightMultiplier'] = s.height;
                   }
                   spans.add(spanMap);
                   charOffset += spanText.length;
@@ -1015,7 +1038,8 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
               visual['textSpans'] = spans;
             }
             // 최상위 style이 없으면 첫 번째 자식 style을 fallback
-            if (style == null || (style.fontSize == null && style.fontWeight == null)) {
+            if (style == null ||
+                (style.fontSize == null && style.fontWeight == null)) {
               final first = spanChildren.first;
               if (first is TextSpan && first.style != null) {
                 style = first.style;
@@ -1398,7 +1422,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         if (decoration.shape == BoxShape.circle) {
           visual['borderRadius'] = node.size.shortestSide / 2;
         } else if (decoration.borderRadius is BorderRadius) {
-          final brVal = _extractBorderRadius(decoration.borderRadius as BorderRadius);
+          final brVal = _extractBorderRadius(
+            decoration.borderRadius as BorderRadius,
+          );
           if (brVal != null) visual['borderRadius'] = brVal;
         } else {
           final br = _parseBorderRadius(decoration.borderRadius);
@@ -1433,7 +1459,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
             hasVisual = true;
           }
           if (shape.borderRadius is BorderRadius) {
-            final brVal = _extractBorderRadius(shape.borderRadius as BorderRadius);
+            final brVal = _extractBorderRadius(
+              shape.borderRadius as BorderRadius,
+            );
             if (brVal != null) visual['borderRadius'] = brVal;
           } else {
             final br = _parseBorderRadius(shape.borderRadius);
@@ -1867,7 +1895,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
               try {
                 final childOffset = child.localToGlobal(Offset.zero);
                 final pos = isHorizontal ? childOffset.dx : childOffset.dy;
-                final size = isHorizontal ? child.size.width : child.size.height;
+                final size = isHorizontal
+                    ? child.size.width
+                    : child.size.height;
                 _childMainAxisPositions.add(pos);
                 if (_lastChildEnd != null) {
                   final gap = pos - _lastChildEnd!;
@@ -2346,12 +2376,14 @@ List<ScrollPosition> _collectScrollPositions(Element? rootElement) {
     final widget = element.widget;
     if (widget is Scrollable) {
       try {
-        final scrollable = (element as StatefulElement).state as ScrollableState;
+        final scrollable =
+            (element as StatefulElement).state as ScrollableState;
         positions.add(scrollable.position);
       } catch (_) {}
     }
     element.visitChildren(visit);
   }
+
   rootElement.visitChildren(visit);
   return positions;
 }
@@ -2650,11 +2682,15 @@ bool injectCrawler(String projectPath) {
     return false;
   }
 
-  final importRe = RegExp('^import\\s+[\\x27\\x22].*[\\x27\\x22];?\\s*\$', multiLine: true);
+  final importRe = RegExp(
+    '^import\\s+[\\x27\\x22].*[\\x27\\x22];?\\s*\$',
+    multiLine: true,
+  );
   final matches = importRe.allMatches(mainCode).toList();
   if (matches.isNotEmpty) {
     final end = matches.last.end;
-    mainCode = '${mainCode.substring(0, end)}'
+    mainCode =
+        '${mainCode.substring(0, end)}'
         "\nimport 'figma_temp_crawler.dart';\n"
         '${mainCode.substring(end)}';
   } else {
@@ -2692,7 +2728,9 @@ Future<void> main(List<String> args) async {
     _log('해결 방법:');
     _log('  1) Flutter 앱을 디버그 모드로 먼저 실행하세요.');
     _log('  2) 콘솔에 출력된 VM Service URI를 인자로 전달하세요:');
-    _log('     dart tools/export_figma_layout.dart ws://127.0.0.1:PORT/TOKEN=/ws');
+    _log(
+      '     dart tools/export_figma_layout.dart ws://127.0.0.1:PORT/TOKEN=/ws',
+    );
     exit(1);
   }
 
@@ -2714,8 +2752,7 @@ Future<void> main(List<String> args) async {
   try {
     // ---- getVM → isolateId ----
     final vm = await rpcCall(ws, 'getVM') as Map<String, dynamic>;
-    final isolates =
-        (vm['isolates'] as List).cast<Map<String, dynamic>>();
+    final isolates = (vm['isolates'] as List).cast<Map<String, dynamic>>();
     if (isolates.isEmpty) throw Exception('VM에 isolate가 없습니다.');
     final isolateId = isolates[0]['id'] as String;
     _log('[VM] isolate: $isolateId');
@@ -2729,14 +2766,14 @@ Future<void> main(List<String> args) async {
     }
 
     // ---- 크롤러 라이브러리 찾기 ----
-    final iso = await rpcCall(ws, 'getIsolate', {'isolateId': isolateId})
-        as Map<String, dynamic>;
-    final libs =
-        (iso['libraries'] as List).cast<Map<String, dynamic>>();
+    final iso =
+        await rpcCall(ws, 'getIsolate', {'isolateId': isolateId})
+            as Map<String, dynamic>;
+    final libs = (iso['libraries'] as List).cast<Map<String, dynamic>>();
     final crawlerLib = libs.cast<Map<String, dynamic>?>().firstWhere(
-          (l) => (l!['uri'] as String).contains('figma_temp_crawler'),
-          orElse: () => null,
-        );
+      (l) => (l!['uri'] as String).contains('figma_temp_crawler'),
+      orElse: () => null,
+    );
 
     await Future.delayed(const Duration(milliseconds: 1500));
 
@@ -2755,11 +2792,13 @@ Future<void> main(List<String> args) async {
         // Phase 2: 결과 폴링 (최대 30초)
         for (int i = 0; i < 60; i++) {
           await Future.delayed(const Duration(milliseconds: 500));
-          final pollResult = await rpcCall(ws, 'evaluate', {
-            'isolateId': isolateId,
-            'targetId': crawlerLib['id'],
-            'expression': 'figmaGetExportResult()',
-          }) as Map<String, dynamic>;
+          final pollResult =
+              await rpcCall(ws, 'evaluate', {
+                    'isolateId': isolateId,
+                    'targetId': crawlerLib['id'],
+                    'expression': 'figmaGetExportResult()',
+                  })
+                  as Map<String, dynamic>;
           if (pollResult['valueAsString'] != null &&
               pollResult['valueAsString'] != 'null') {
             result = pollResult;
@@ -2799,10 +2838,12 @@ Future<void> main(List<String> args) async {
       jsonString = res['valueAsString'] as String;
     } else if (res['id'] != null) {
       _log('[Evaluate] 결과가 잘림 → getObject로 전체 가져오기...');
-      final full = await rpcCall(ws, 'getObject', {
-        'isolateId': isolateId,
-        'objectId': res['id'],
-      }) as Map<String, dynamic>;
+      final full =
+          await rpcCall(ws, 'getObject', {
+                'isolateId': isolateId,
+                'objectId': res['id'],
+              })
+              as Map<String, dynamic>;
       jsonString = full['valueAsString'] as String;
     } else {
       throw Exception('예상치 못한 결과: ${jsonEncode(result)}');
@@ -2812,8 +2853,7 @@ Future<void> main(List<String> args) async {
     final dumpDir = Directory('$projectPath/flutter_figma_dump');
     if (!dumpDir.existsSync()) dumpDir.createSync(recursive: true);
 
-    File('${dumpDir.path}/figma_layout_raw.json')
-        .writeAsStringSync(jsonString);
+    File('${dumpDir.path}/figma_layout_raw.json').writeAsStringSync(jsonString);
 
     final data = jsonDecode(jsonString);
     final pretty = const JsonEncoder.withIndent('  ').convert(data);

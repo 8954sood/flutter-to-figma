@@ -201,11 +201,15 @@ bool injectCrawler(String projectPath) {
     return false;
   }
 
-  final importRe = RegExp('^import\\s+[\\x27\\x22].*[\\x27\\x22];?\\s*\$', multiLine: true);
+  final importRe = RegExp(
+    '^import\\s+[\\x27\\x22].*[\\x27\\x22];?\\s*\$',
+    multiLine: true,
+  );
   final matches = importRe.allMatches(mainCode).toList();
   if (matches.isNotEmpty) {
     final end = matches.last.end;
-    mainCode = '${mainCode.substring(0, end)}'
+    mainCode =
+        '${mainCode.substring(0, end)}'
         "\nimport 'figma_temp_crawler.dart';\n"
         '${mainCode.substring(end)}';
   } else {
@@ -243,7 +247,9 @@ Future<void> main(List<String> args) async {
     _log('해결 방법:');
     _log('  1) Flutter 앱을 디버그 모드로 먼저 실행하세요.');
     _log('  2) 콘솔에 출력된 VM Service URI를 인자로 전달하세요:');
-    _log('     dart tools/export_figma_layout.dart ws://127.0.0.1:PORT/TOKEN=/ws');
+    _log(
+      '     dart tools/export_figma_layout.dart ws://127.0.0.1:PORT/TOKEN=/ws',
+    );
     exit(1);
   }
 
@@ -265,8 +271,7 @@ Future<void> main(List<String> args) async {
   try {
     // ---- getVM → isolateId ----
     final vm = await rpcCall(ws, 'getVM') as Map<String, dynamic>;
-    final isolates =
-        (vm['isolates'] as List).cast<Map<String, dynamic>>();
+    final isolates = (vm['isolates'] as List).cast<Map<String, dynamic>>();
     if (isolates.isEmpty) throw Exception('VM에 isolate가 없습니다.');
     final isolateId = isolates[0]['id'] as String;
     _log('[VM] isolate: $isolateId');
@@ -280,14 +285,14 @@ Future<void> main(List<String> args) async {
     }
 
     // ---- 크롤러 라이브러리 찾기 ----
-    final iso = await rpcCall(ws, 'getIsolate', {'isolateId': isolateId})
-        as Map<String, dynamic>;
-    final libs =
-        (iso['libraries'] as List).cast<Map<String, dynamic>>();
+    final iso =
+        await rpcCall(ws, 'getIsolate', {'isolateId': isolateId})
+            as Map<String, dynamic>;
+    final libs = (iso['libraries'] as List).cast<Map<String, dynamic>>();
     final crawlerLib = libs.cast<Map<String, dynamic>?>().firstWhere(
-          (l) => (l!['uri'] as String).contains('figma_temp_crawler'),
-          orElse: () => null,
-        );
+      (l) => (l!['uri'] as String).contains('figma_temp_crawler'),
+      orElse: () => null,
+    );
 
     await Future.delayed(const Duration(milliseconds: 1500));
 
@@ -306,11 +311,13 @@ Future<void> main(List<String> args) async {
         // Phase 2: 결과 폴링 (최대 30초)
         for (int i = 0; i < 60; i++) {
           await Future.delayed(const Duration(milliseconds: 500));
-          final pollResult = await rpcCall(ws, 'evaluate', {
-            'isolateId': isolateId,
-            'targetId': crawlerLib['id'],
-            'expression': 'figmaGetExportResult()',
-          }) as Map<String, dynamic>;
+          final pollResult =
+              await rpcCall(ws, 'evaluate', {
+                    'isolateId': isolateId,
+                    'targetId': crawlerLib['id'],
+                    'expression': 'figmaGetExportResult()',
+                  })
+                  as Map<String, dynamic>;
           if (pollResult['valueAsString'] != null &&
               pollResult['valueAsString'] != 'null') {
             result = pollResult;
@@ -350,10 +357,12 @@ Future<void> main(List<String> args) async {
       jsonString = res['valueAsString'] as String;
     } else if (res['id'] != null) {
       _log('[Evaluate] 결과가 잘림 → getObject로 전체 가져오기...');
-      final full = await rpcCall(ws, 'getObject', {
-        'isolateId': isolateId,
-        'objectId': res['id'],
-      }) as Map<String, dynamic>;
+      final full =
+          await rpcCall(ws, 'getObject', {
+                'isolateId': isolateId,
+                'objectId': res['id'],
+              })
+              as Map<String, dynamic>;
       jsonString = full['valueAsString'] as String;
     } else {
       throw Exception('예상치 못한 결과: ${jsonEncode(result)}');
@@ -363,8 +372,7 @@ Future<void> main(List<String> args) async {
     final dumpDir = Directory('$projectPath/flutter_figma_dump');
     if (!dumpDir.existsSync()) dumpDir.createSync(recursive: true);
 
-    File('${dumpDir.path}/figma_layout_raw.json')
-        .writeAsStringSync(jsonString);
+    File('${dumpDir.path}/figma_layout_raw.json').writeAsStringSync(jsonString);
 
     final data = jsonDecode(jsonString);
     final pretty = const JsonEncoder.withIndent('  ').convert(data);

@@ -79,6 +79,7 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
     }
     ro.visitChildren(find);
   }
+
   find(root);
   debugPrint('[ShaderMask] found ${nodes.length} nodes');
 
@@ -106,7 +107,9 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
       );
       final picture = recorder.endRecording();
       final image = await picture.toImage(sw, sh);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final byteData = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       image.dispose();
       if (byteData == null) {
         debugPrint('[ShaderMask] byteData null');
@@ -126,7 +129,10 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
       }
 
       double colorDist(Color a, Color b) =>
-          ((a.red - b.red).abs() + (a.green - b.green).abs() + (a.blue - b.blue).abs()).toDouble();
+          ((a.red - b.red).abs() +
+                  (a.green - b.green).abs() +
+                  (a.blue - b.blue).abs())
+              .toDouble();
 
       // 방향 판별
       const n = 6;
@@ -182,6 +188,7 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
         _shaderMaskGradients[obj] = gradient;
         obj.visitChildren(mapAll);
       }
+
       node.visitChildren(mapAll);
     } catch (e, st) {
       debugPrint('[ShaderMask] ERROR: $e\n$st');
@@ -270,7 +277,10 @@ Future<void> _preCaptureImages(RenderObject node) async {
         final outW = (w * pr).round();
         final outH = (h * pr).round();
         final recorder = ui.PictureRecorder();
-        final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
+        final canvas = Canvas(
+          recorder,
+          Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
+        );
         canvas.scale(pr);
         painter.paint(canvas, Size(w, h));
         final picture = recorder.endRecording();
@@ -528,9 +538,16 @@ void _collectDesignInfoFromElements(Element element) {
 
   // Checkbox / Switch → renderObject와 하위 자식 모두 캡처 대상 등록
   const captureWidgets = {
-    'Checkbox', 'Switch', 'CupertinoSwitch',
-    'Slider', 'CircularProgressIndicator', 'LinearProgressIndicator',
-    'ChoiceChip', 'FilterChip', 'InputChip', 'ActionChip',
+    'Checkbox',
+    'Switch',
+    'CupertinoSwitch',
+    'Slider',
+    'CircularProgressIndicator',
+    'LinearProgressIndicator',
+    'ChoiceChip',
+    'FilterChip',
+    'InputChip',
+    'ActionChip',
   };
   if (captureWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
@@ -595,7 +612,9 @@ void _collectDesignInfoFromElements(Element element) {
         if (radians.abs() > 0.001) {
           final degrees = radians * 180.0 / math.pi;
           _rotationByRenderObject[ro] = degrees;
-          debugPrint('[Transform] captured rotation=${degrees.toStringAsFixed(2)}° for $ro');
+          debugPrint(
+            '[Transform] captured rotation=${degrees.toStringAsFixed(2)}° for $ro',
+          );
         }
       }
     } catch (e) {
@@ -651,12 +670,11 @@ Map<String, dynamic>? _extractGradient(dynamic gradient) {
         stops.add(i / (colors.length - 1));
       }
     }
-  } catch (_) { return null; }
+  } catch (_) {
+    return null;
+  }
 
-  final map = <String, dynamic>{
-    'colors': colors,
-    'stops': stops,
-  };
+  final map = <String, dynamic>{'colors': colors, 'stops': stops};
 
   final typeName = gradient.runtimeType.toString();
   if (typeName.contains('LinearGradient')) {
@@ -979,11 +997,16 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
                   final s = child.style;
                   if (s != null) {
                     if (s.fontSize != null) spanMap['fontSize'] = s.fontSize;
-                    if (s.fontWeight != null) spanMap['fontWeight'] = s.fontWeight.toString();
-                    if (s.color != null) spanMap['color'] = _colorToHex(s.color);
-                    if (s.fontFamily != null) spanMap['fontFamily'] = s.fontFamily;
-                    if (s.letterSpacing != null) spanMap['letterSpacing'] = s.letterSpacing;
-                    if (s.height != null) spanMap['lineHeightMultiplier'] = s.height;
+                    if (s.fontWeight != null)
+                      spanMap['fontWeight'] = s.fontWeight.toString();
+                    if (s.color != null)
+                      spanMap['color'] = _colorToHex(s.color);
+                    if (s.fontFamily != null)
+                      spanMap['fontFamily'] = s.fontFamily;
+                    if (s.letterSpacing != null)
+                      spanMap['letterSpacing'] = s.letterSpacing;
+                    if (s.height != null)
+                      spanMap['lineHeightMultiplier'] = s.height;
                   }
                   spans.add(spanMap);
                   charOffset += spanText.length;
@@ -994,7 +1017,8 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
               visual['textSpans'] = spans;
             }
             // 최상위 style이 없으면 첫 번째 자식 style을 fallback
-            if (style == null || (style.fontSize == null && style.fontWeight == null)) {
+            if (style == null ||
+                (style.fontSize == null && style.fontWeight == null)) {
               final first = spanChildren.first;
               if (first is TextSpan && first.style != null) {
                 style = first.style;
@@ -1377,7 +1401,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         if (decoration.shape == BoxShape.circle) {
           visual['borderRadius'] = node.size.shortestSide / 2;
         } else if (decoration.borderRadius is BorderRadius) {
-          final brVal = _extractBorderRadius(decoration.borderRadius as BorderRadius);
+          final brVal = _extractBorderRadius(
+            decoration.borderRadius as BorderRadius,
+          );
           if (brVal != null) visual['borderRadius'] = brVal;
         } else {
           final br = _parseBorderRadius(decoration.borderRadius);
@@ -1412,7 +1438,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
             hasVisual = true;
           }
           if (shape.borderRadius is BorderRadius) {
-            final brVal = _extractBorderRadius(shape.borderRadius as BorderRadius);
+            final brVal = _extractBorderRadius(
+              shape.borderRadius as BorderRadius,
+            );
             if (brVal != null) visual['borderRadius'] = brVal;
           } else {
             final br = _parseBorderRadius(shape.borderRadius);
@@ -1846,7 +1874,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
               try {
                 final childOffset = child.localToGlobal(Offset.zero);
                 final pos = isHorizontal ? childOffset.dx : childOffset.dy;
-                final size = isHorizontal ? child.size.width : child.size.height;
+                final size = isHorizontal
+                    ? child.size.width
+                    : child.size.height;
                 _childMainAxisPositions.add(pos);
                 if (_lastChildEnd != null) {
                   final gap = pos - _lastChildEnd!;
@@ -2325,12 +2355,14 @@ List<ScrollPosition> _collectScrollPositions(Element? rootElement) {
     final widget = element.widget;
     if (widget is Scrollable) {
       try {
-        final scrollable = (element as StatefulElement).state as ScrollableState;
+        final scrollable =
+            (element as StatefulElement).state as ScrollableState;
         positions.add(scrollable.position);
       } catch (_) {}
     }
     element.visitChildren(visit);
   }
+
   rootElement.visitChildren(visit);
   return positions;
 }

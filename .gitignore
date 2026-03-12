@@ -1,4 +1,21 @@
-figma_layout_raw.json
-tools/figma_layout_raw2.json
-tools/figma_layout_raw.json
+# Generated
+tools/generated_export_figma_layout.dart
+
+# Extracted JSON
+*.json
+!figma_plugin/manifest.json
+
+# OS
 .DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Dart
+.dart_tool/
+.packages
+pubspec.lock
+build/

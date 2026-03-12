@@ -1,0 +1,74 @@
+name: Bug Report
+description: Report a rendering issue or unexpected behavior
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please include screenshots so we can compare the expected vs actual output.
+
+  - type: input
+    id: flutter-version
+    attributes:
+      label: Flutter Version
+      placeholder: "e.g. 3.22.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS / Platform
+      placeholder: "e.g. macOS 15.3, Windows 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened and what did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot-emulator
+    attributes:
+      label: Emulator Screenshot
+      description: Screenshot of the Flutter app running on the emulator/simulator.
+      placeholder: Drag and drop or paste the emulator screenshot here.
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot-figma
+    attributes:
+      label: Figma Output Screenshot
+      description: Screenshot of the result generated in Figma by the plugin.
+      placeholder: Drag and drop or paste the Figma output screenshot here.
+    validations:
+      required: true
+
+  - type: textarea
+    id: widget-code
+    attributes:
+      label: Flutter Widget Code
+      description: The widget code that produces the issue.
+      render: dart
+
+  - type: textarea
+    id: extracted-json
+    attributes:
+      label: Extracted JSON (optional)
+      description: The JSON output from the extractor, if available.
+      render: json
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      value: |
+        1. Run the Flutter app with the widget above
+        2. Extract layout JSON
+        3. Paste into Figma plugin and render
+        4. See the difference

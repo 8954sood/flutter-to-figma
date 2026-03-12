@@ -11,8 +11,7 @@ import 'dart:io';
 
 void main() {
   // 이 스크립트가 위치한 디렉토리 기준으로 경로 결정
-  final scriptDir =
-      File(Platform.script.toFilePath()).parent.path;
+  final scriptDir = File(Platform.script.toFilePath()).parent.path;
 
   final crawlerPath = '$scriptDir/crawler_source.dart';
   final skeletonPath = '$scriptDir/export_figma_layout.dart';
@@ -58,11 +57,16 @@ void main() {
 
   // 플레이스홀더 치환
   if (!skeleton.contains('%%CRAWLER_SOURCE%%')) {
-    stderr.writeln('ERROR: export_figma_layout.dart에 %%CRAWLER_SOURCE%% 플레이스홀더가 없습니다.');
+    stderr.writeln(
+      'ERROR: export_figma_layout.dart에 %%CRAWLER_SOURCE%% 플레이스홀더가 없습니다.',
+    );
     exit(1);
   }
 
-  final output = skeleton.replaceFirst('%%CRAWLER_SOURCE%%', processedCrawlerSource);
+  final output = skeleton.replaceFirst(
+    '%%CRAWLER_SOURCE%%',
+    processedCrawlerSource,
+  );
 
   // 출력
   File(outputPath).writeAsStringSync(output);
