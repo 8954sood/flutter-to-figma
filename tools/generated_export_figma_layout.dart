@@ -472,6 +472,11 @@ void _collectDesignInfoFromElements(Element element) {
     dynamic radius;
     double? borderTopW, borderRightW, borderBottomW, borderLeftW;
 
+    // Container(color: ...) → decoration 없이 color만 설정된 경우
+    if (deco == null && widget.color != null) {
+      bg = widget.color;
+    }
+
     if (deco is BoxDecoration) {
       bg = deco.color;
       final border = deco.border;
@@ -513,6 +518,13 @@ void _collectDesignInfoFromElements(Element element) {
         borderBottomWidth: borderBottomW,
         borderLeftWidth: borderLeftW,
       );
+    }
+  }
+
+  if (widget is ColoredBox) {
+    final ro = element.renderObject;
+    if (ro != null) {
+      _designInfoByRenderObject[ro] = DesignInfo(backgroundColor: widget.color);
     }
   }
 
