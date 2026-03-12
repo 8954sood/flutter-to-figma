@@ -1555,6 +1555,21 @@ function applyAutoLayout(frame, props) {
   // Alignment
   frame.primaryAxisAlignItems = mapMainAxisAlign(props.mainAxisAlignment);
   frame.counterAxisAlignItems = mapCrossAxisAlign(props.crossAxisAlignment);
+
+  // spaceAround / spaceEvenly → SPACE_BETWEEN + 패딩으로 시뮬레이션
+  var maKey = String(props.mainAxisAlignment || "").split(".").pop();
+  if (maKey === "spaceAround" || maKey === "spaceEvenly") {
+    var spacing = frame.itemSpacing || 0;
+    var extraPad = maKey === "spaceAround" ? spacing / 2 : spacing;
+    var isHoriz = (props.layoutMode === "HORIZONTAL" || props.layoutMode === "ROW");
+    if (isHoriz) {
+      frame.paddingLeft = (frame.paddingLeft || 0) + extraPad;
+      frame.paddingRight = (frame.paddingRight || 0) + extraPad;
+    } else {
+      frame.paddingTop = (frame.paddingTop || 0) + extraPad;
+      frame.paddingBottom = (frame.paddingBottom || 0) + extraPad;
+    }
+  }
 }
 
 // ----------------------------
