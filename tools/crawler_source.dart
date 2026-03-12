@@ -34,6 +34,7 @@ class DesignInfo {
   final double? borderRightWidth;
   final double? borderBottomWidth;
   final double? borderLeftWidth;
+  final bool clipsContent;
 
   DesignInfo({
     this.backgroundColor,
@@ -47,6 +48,7 @@ class DesignInfo {
     this.borderRightWidth,
     this.borderBottomWidth,
     this.borderLeftWidth,
+    this.clipsContent = false,
   });
 }
 
@@ -65,6 +67,7 @@ final Map<RenderObject, Map<String, dynamic>> _shaderMaskGradients = {};
 final Map<RenderObject, CustomPainter> _customPainterByRO = {};
 final Map<RenderObject, CustomClipper<Path>> _clipperByRenderObject = {};
 final Map<RenderObject, List<Map<String, double>>> _clipPathPoints = {};
+final Map<RenderObject, String> _boxFitByRenderObject = {};
 String? _asyncExportResult;
 bool _asyncExportBusy = false;
 
@@ -590,6 +593,46 @@ void _collectDesignInfoFromElements(Element element) {
     }
   }
 
+  // Card → shape, color, elevation, clipBehavior 추출
+  if (widget is Card) {
+    final ro = element.renderObject;
+    if (ro != null) {
+      Color? bg = widget.color;
+      double? elevation = widget.elevation;
+      dynamic radius;
+      bool clips = false;
+
+      final shape = widget.shape;
+      if (shape is RoundedRectangleBorder) {
+        final br = shape.borderRadius;
+        if (br is BorderRadius) {
+          radius = _extractBorderRadius(br);
+        }
+      }
+
+      if (widget.clipBehavior != Clip.none) {
+        clips = true;
+      }
+
+      if (bg != null || radius != null || elevation != null || clips) {
+        _designInfoByRenderObject[ro] = DesignInfo(
+          backgroundColor: bg,
+          borderRadius: radius,
+          elevation: elevation,
+          clipsContent: clips,
+        );
+      }
+    }
+  }
+
+  // FittedBox → boxFit 추출
+  if (widget is FittedBox) {
+    final ro = element.renderObject;
+    if (ro != null) {
+      _boxFitByRenderObject[ro] = widget.fit.toString().split('.').last;
+    }
+  }
+
   // ClipPath → clipper 등록 (async phase에서 Path 샘플링)
   if (widget is ClipPath) {
     final ro = element.renderObject;
@@ -864,6 +907,38 @@ List<Map<String, dynamic>> _crawlThroughSliver(RenderObject sliver) {
     }
   });
   return results;
+}
+
+/// FittedBox 스케일 보정: Text fontSize + 자식 rect w/h 재귀 스케일
+void _applyFittedBoxScale(Map<String, dynamic> node, double scale) {
+  // Text → fontSize/letterSpacing 스케일
+  if (node['type'] == 'Text') {
+    final visual = node['visual'] as Map<String, dynamic>? ?? {};
+    final origSize = visual['fontSize'];
+    if (origSize is num) {
+      visual['fontSize'] = (origSize * scale * 10).floorToDouble() / 10.0;
+    }
+    final origSpacing = visual['letterSpacing'];
+    if (origSpacing is num && origSpacing != 0) {
+      visual['letterSpacing'] = (origSpacing * scale * 100).round() / 100.0;
+    }
+    node['visual'] = visual;
+  }
+
+  // 자식 노드의 rect w/h 스케일 (아이콘 등 비텍스트 자식 포함)
+  final children = node['children'] as List?;
+  if (children != null) {
+    for (final child in children) {
+      if (child is Map<String, dynamic>) {
+        final rect = child['rect'] as Map<String, dynamic>?;
+        if (rect != null) {
+          if (rect['w'] is num) rect['w'] = (rect['w'] as num) * scale;
+          if (rect['h'] is num) rect['h'] = (rect['h'] as num) * scale;
+        }
+        _applyFittedBoxScale(child, scale);
+      }
+    }
+  }
 }
 
 /// 메인 크롤 함수: RenderObject → 새 스키마 노드
@@ -1510,6 +1585,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     if (node.elevation > 0) {
       visual['shadow'] = {'elevation': node.elevation};
     }
+    if (node.clipBehavior != Clip.none) {
+      visual['clipsContent'] = true;
+    }
     try {
       dynamic d = node;
       if (d.borderRadius != null) {
@@ -1560,6 +1638,38 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     } catch (_) {}
   }
   // ---------------------------------------------------
+  // [8.3] RenderOpacity
+  // ---------------------------------------------------
+  else if (node is RenderOpacity) {
+    // Opacity 값을 자식에 전파
+    final double opacityValue = node.opacity;
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        final childVisual =
+            childResult['visual'] as Map<String, dynamic>? ?? {};
+        childVisual['opacity'] = opacityValue;
+        childResult['visual'] = childVisual;
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
+        };
+        return childResult;
+      }
+    }
+    type = 'Frame';
+    layoutMode = 'NONE';
+    visual['opacity'] = opacityValue;
+  }
+  // ---------------------------------------------------
   // [8.5] RenderClipRRect
   // ---------------------------------------------------
   else if (node is RenderClipRRect) {
@@ -1602,6 +1712,44 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     type = 'Frame';
     layoutMode = 'NONE';
     if (brValue != null) visual['borderRadius'] = brValue;
+  }
+  // ---------------------------------------------------
+  // [8.52] RenderClipOval
+  // ---------------------------------------------------
+  else if (node is RenderClipOval) {
+    // 원형 클리핑: borderRadius = min(width, height) / 2
+    final double ovalRadius = math.min(node.size.width, node.size.height) / 2;
+
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        final childVisual =
+            childResult['visual'] as Map<String, dynamic>? ?? {};
+        if (!childVisual.containsKey('borderRadius')) {
+          childVisual['borderRadius'] = ovalRadius;
+          childResult['visual'] = childVisual;
+        }
+        childVisual['clipsContent'] = true;
+        childResult['visual'] = childVisual;
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
+        };
+        return childResult;
+      }
+    }
+    type = 'Frame';
+    layoutMode = 'NONE';
+    visual['borderRadius'] = ovalRadius;
+    visual['clipsContent'] = true;
   }
   // ---------------------------------------------------
   // [8.55] RenderBackdropFilter → backgroundBlur
@@ -1729,6 +1877,84 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     }
   }
   // ---------------------------------------------------
+  // [8.7] RenderFittedBox
+  // ---------------------------------------------------
+  else if (node is RenderFittedBox) {
+    final String? boxFit = _boxFitByRenderObject[node];
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final sc = singleChild!;
+      final childResult = _crawl(sc);
+      if (childResult != null) {
+        final double parentW = node.size.width;
+        final double parentH = node.size.height;
+        final double childW = sc.size.width;
+        final double childH = sc.size.height;
+
+        double scaleX = childW > 0 ? parentW / childW : 1.0;
+        double scaleY = childH > 0 ? parentH / childH : 1.0;
+        final String fitKey = (boxFit ?? 'contain').toLowerCase();
+        double scale;
+        if (fitKey == 'cover') {
+          scale = math.max(scaleX, scaleY);
+        } else if (fitKey == 'fitwidth') {
+          scale = scaleX;
+        } else if (fitKey == 'fitheight') {
+          scale = scaleY;
+        } else if (fitKey == 'none') {
+          scale = 1.0;
+        } else {
+          // contain, scaleDown, fill → 모두 min(scaleX, scaleY) 사용
+          // fill은 비균일 스케일이지만 fontSize는 균일만 가능하므로 contain으로 근사
+          scale = math.min(scaleX, scaleY);
+          if (fitKey == 'scaledown' && scale > 1.0) scale = 1.0;
+        }
+
+        // 자식 트리 전체 스케일 보정 (Text fontSize + 자식 rect w/h)
+        if (scale != 1.0) {
+          _applyFittedBoxScale(childResult, scale);
+        }
+        // FittedBox 자식은 정확한 크기가 보장되므로 fixedSize 마킹
+        final cl = childResult['childLayout'] as Map<String, dynamic>? ?? {};
+        cl['fixedSize'] = true;
+        cl['fixedWidth'] = true;
+        cl['fixedHeight'] = true;
+        childResult['childLayout'] = cl;
+
+        // FittedBox alignment (기본 center)
+        if (childResult['type'] == 'Frame') {
+          // Frame 자식 → containerLayout으로 중앙 정렬
+          final containerLayout =
+              childResult['containerLayout'] as Map<String, dynamic>? ?? {};
+          containerLayout['mainAxisAlignment'] = 'center';
+          containerLayout['crossAxisAlignment'] = 'center';
+          childResult['containerLayout'] = containerLayout;
+        } else if (childResult['type'] == 'Text') {
+          // Text 자식 → visual에 중앙 정렬 플래그
+          final childVisual =
+              childResult['visual'] as Map<String, dynamic>? ?? {};
+          childVisual['textAlignVertical'] = 'center';
+          childResult['visual'] = childVisual;
+        }
+
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': parentW,
+          'h': parentH,
+        };
+        return childResult;
+      }
+    }
+    type = 'Frame';
+    layoutMode = 'NONE';
+  }
+  // ---------------------------------------------------
   // [9] Picture / CustomPaint
   // ---------------------------------------------------
   else if (runtimeTypeStr.contains('Picture') ||
@@ -1809,6 +2035,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     if (designInfo.elevation != null && designInfo.elevation! > 0) {
       visual['shadow'] = {'elevation': designInfo.elevation};
     }
+    if (designInfo.clipsContent) visual['clipsContent'] = true;
     if (designInfo.isTextField) visual['isTextField'] = true;
     if (designInfo.isDivider) visual['isDivider'] = true;
   }
@@ -2233,6 +2460,25 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   if (_widgetNameByRenderObject.containsKey(node)) {
     result['widgetName'] = _widgetNameByRenderObject[node];
   }
+
+  // clipsContent 전파: 부모가 clipsContent + borderRadius 이면,
+  // 동일 borderRadius를 가진 직계 자식에도 clipsContent 전파
+  // (Card → Material 구조: RenderPhysicalModel → RenderDecoratedBox 중복 방지)
+  if (visual['clipsContent'] == true && visual['borderRadius'] != null) {
+    final parentBr = visual['borderRadius'];
+    for (final child in children) {
+      if (child is Map<String, dynamic>) {
+        final cv = child['visual'] as Map<String, dynamic>?;
+        if (cv != null &&
+            cv['borderRadius'] != null &&
+            cv['borderRadius'].toString() == parentBr.toString() &&
+            cv['clipsContent'] != true) {
+          cv['clipsContent'] = true;
+        }
+      }
+    }
+  }
+
   // childLayout은 부모가 설정 (위에서 이미 설정됨)
   return result;
 }
@@ -2300,6 +2546,7 @@ String figmaExtractorEntryPoint() {
     _shaderMaskWidgets.clear();
     _customPainterByRO.clear();
     _clipperByRenderObject.clear();
+    _boxFitByRenderObject.clear();
     // _shaderMaskGradients, _clipPathPoints는 async phase에서 채워지므로 여기서 clear하지 않음
 
     final rootElement = WidgetsBinding.instance.renderViewElement;
@@ -2399,6 +2646,7 @@ Future<String> _figmaExportWithImagesAsync() async {
   _customPainterByRO.clear();
   _clipperByRenderObject.clear();
   _clipPathPoints.clear();
+  _boxFitByRenderObject.clear();
 
   // Phase 0: Element tree 순회 → _customPaintCaptures 등록 (pre-capture에 필요)
   final rootElement = WidgetsBinding.instance.renderViewElement;

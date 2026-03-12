@@ -113,6 +113,10 @@ dart run tools/generated_export_figma_layout.dart ws://127.0.0.1:PORT/TOKEN=/ws 
 | Text       | Font size, Weight, Color, Alignment, Letter spacing   |
 | Grid       | GridView mainAxisSpacing, crossAxisSpacing             |
 
+## 알려진 제한사항
+
+Figma API의 한계로 인해 일부 Flutter 위젯은 완벽히 재현할 수 없습니다. 자세한 내용은 [KNOWN_LIMITATIONS.ko.md](./KNOWN_LIMITATIONS.ko.md)를 참고하세요.
+
 ## 프로젝트 구조
 
 ```

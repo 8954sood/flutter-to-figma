@@ -8,6 +8,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+const figmaCrawlerVersion = '0.2.0';
+
 /// =======================================================
 /// 0. 유틸 & 전역 상태
 /// =======================================================
@@ -29,6 +31,7 @@ class DesignInfo {
   final double? borderRightWidth;
   final double? borderBottomWidth;
   final double? borderLeftWidth;
+  final bool clipsContent;
 
   DesignInfo({
     this.backgroundColor,
@@ -42,6 +45,7 @@ class DesignInfo {
     this.borderRightWidth,
     this.borderBottomWidth,
     this.borderLeftWidth,
+    this.clipsContent = false,
   });
 }
 
@@ -49,6 +53,9 @@ final Map<RenderObject, DesignInfo> _designInfoByRenderObject = {};
 final Set<RenderObject> _svgBoxTargets = {};
 final Map<RenderObject, String> _imageDataByNode = {};
 final Set<RenderObject> _customPaintCaptures = {};
+
+/// 이미지/아이콘 캡처 해상도 배율 (CLI --pixel-ratio 플래그로 제어)
+double _capturePixelRatio = 3.0;
 final Map<RenderObject, String> _widgetNameByRenderObject = {};
 final Map<RenderObject, double> _blurInfoByRenderObject = {};
 final Map<RenderObject, double> _rotationByRenderObject = {};
@@ -57,6 +64,7 @@ final Map<RenderObject, Map<String, dynamic>> _shaderMaskGradients = {};
 final Map<RenderObject, CustomPainter> _customPainterByRO = {};
 final Map<RenderObject, CustomClipper<Path>> _clipperByRenderObject = {};
 final Map<RenderObject, List<Map<String, double>>> _clipPathPoints = {};
+final Map<RenderObject, String> _boxFitByRenderObject = {};
 String? _asyncExportResult;
 bool _asyncExportBusy = false;
 
@@ -76,6 +84,7 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
     }
     ro.visitChildren(find);
   }
+
   find(root);
   debugPrint('[ShaderMask] found ${nodes.length} nodes');
 
@@ -103,7 +112,9 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
       );
       final picture = recorder.endRecording();
       final image = await picture.toImage(sw, sh);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final byteData = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       image.dispose();
       if (byteData == null) {
         debugPrint('[ShaderMask] byteData null');
@@ -123,7 +134,10 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
       }
 
       double colorDist(Color a, Color b) =>
-          ((a.red - b.red).abs() + (a.green - b.green).abs() + (a.blue - b.blue).abs()).toDouble();
+          ((a.red - b.red).abs() +
+                  (a.green - b.green).abs() +
+                  (a.blue - b.blue).abs())
+              .toDouble();
 
       // 방향 판별
       const n = 6;
@@ -179,6 +193,7 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
         _shaderMaskGradients[obj] = gradient;
         obj.visitChildren(mapAll);
       }
+
       node.visitChildren(mapAll);
     } catch (e, st) {
       debugPrint('[ShaderMask] ERROR: $e\n$st');
@@ -191,12 +206,12 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
 /// =======================================================
 
 Future<void> _preCaptureImages(RenderObject node) async {
-  // RenderImage → 축소 후 PNG 인코딩 (최대 512px)
+  // RenderImage → 축소 후 PNG 인코딩 (maxDim = 512 * pixelRatio)
   if (node is RenderImage) {
     try {
       final ui.Image? img = node.image;
       if (img != null) {
-        final maxDim = 512;
+        final maxDim = (512 * _capturePixelRatio).round();
         int targetW = img.width;
         int targetH = img.height;
         if (targetW > maxDim || targetH > maxDim) {
@@ -230,11 +245,15 @@ Future<void> _preCaptureImages(RenderObject node) async {
       final span = node.text;
       if (span is TextSpan &&
           span.style?.fontFamily?.contains('MaterialIcons') == true) {
+        final double pr = _capturePixelRatio;
+        final outW = (node.size.width * pr).ceil();
+        final outH = (node.size.height * pr).ceil();
         final recorder = ui.PictureRecorder();
         final canvas = Canvas(
           recorder,
-          Rect.fromLTWH(0, 0, node.size.width, node.size.height),
+          Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
         );
+        canvas.scale(pr);
         final painter = TextPainter(
           text: span,
           textDirection: TextDirection.ltr,
@@ -242,10 +261,7 @@ Future<void> _preCaptureImages(RenderObject node) async {
         painter.layout();
         painter.paint(canvas, Offset.zero);
         final picture = recorder.endRecording();
-        final img = await picture.toImage(
-          node.size.width.ceil(),
-          node.size.height.ceil(),
-        );
+        final img = await picture.toImage(outW, outH);
         final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
         if (byteData != null) {
           _imageDataByNode[node] = base64Encode(byteData.buffer.asUint8List());
@@ -263,11 +279,14 @@ Future<void> _preCaptureImages(RenderObject node) async {
       final w = node.size.width;
       final h = node.size.height;
       if (w > 0 && h > 0) {
-        const double pr = 2.0;
+        final double pr = _capturePixelRatio;
         final outW = (w * pr).round();
         final outH = (h * pr).round();
         final recorder = ui.PictureRecorder();
-        final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
+        final canvas = Canvas(
+          recorder,
+          Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
+        );
         canvas.scale(pr);
         painter.paint(canvas, Size(w, h));
         final picture = recorder.endRecording();
@@ -293,7 +312,7 @@ Future<void> _preCaptureImages(RenderObject node) async {
       final w = node.size.width;
       final h = node.size.height;
       if (w > 0 && h > 0) {
-        const double pr = 2.0;
+        final double pr = _capturePixelRatio;
         const double pad = 4.0;
         // 충분히 큰 RepaintBoundary를 찾음 (노드보다 사방 pad 이상 큰 것)
         RenderObject? ancestor = node.parent;
@@ -432,6 +451,11 @@ void _collectDesignInfoFromElements(Element element) {
     dynamic radius;
     double? borderTopW, borderRightW, borderBottomW, borderLeftW;
 
+    // Container(color: ...) → decoration 없이 color만 설정된 경우
+    if (deco == null && widget.color != null) {
+      bg = widget.color;
+    }
+
     if (deco is BoxDecoration) {
       bg = deco.color;
       final border = deco.border;
@@ -473,6 +497,13 @@ void _collectDesignInfoFromElements(Element element) {
         borderBottomWidth: borderBottomW,
         borderLeftWidth: borderLeftW,
       );
+    }
+  }
+
+  if (widget is ColoredBox) {
+    final ro = element.renderObject;
+    if (ro != null) {
+      _designInfoByRenderObject[ro] = DesignInfo(backgroundColor: widget.color);
     }
   }
 
@@ -525,9 +556,16 @@ void _collectDesignInfoFromElements(Element element) {
 
   // Checkbox / Switch → renderObject와 하위 자식 모두 캡처 대상 등록
   const captureWidgets = {
-    'Checkbox', 'Switch', 'CupertinoSwitch',
-    'Slider', 'CircularProgressIndicator', 'LinearProgressIndicator',
-    'ChoiceChip', 'FilterChip', 'InputChip', 'ActionChip',
+    'Checkbox',
+    'Switch',
+    'CupertinoSwitch',
+    'Slider',
+    'CircularProgressIndicator',
+    'LinearProgressIndicator',
+    'ChoiceChip',
+    'FilterChip',
+    'InputChip',
+    'ActionChip',
   };
   if (captureWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
@@ -549,6 +587,46 @@ void _collectDesignInfoFromElements(Element element) {
         _customPainterByRO[ro] = cp.painter!;
         _markCaptureRecursive(ro);
       }
+    }
+  }
+
+  // Card → shape, color, elevation, clipBehavior 추출
+  if (widget is Card) {
+    final ro = element.renderObject;
+    if (ro != null) {
+      Color? bg = widget.color;
+      double? elevation = widget.elevation;
+      dynamic radius;
+      bool clips = false;
+
+      final shape = widget.shape;
+      if (shape is RoundedRectangleBorder) {
+        final br = shape.borderRadius;
+        if (br is BorderRadius) {
+          radius = _extractBorderRadius(br);
+        }
+      }
+
+      if (widget.clipBehavior != Clip.none) {
+        clips = true;
+      }
+
+      if (bg != null || radius != null || elevation != null || clips) {
+        _designInfoByRenderObject[ro] = DesignInfo(
+          backgroundColor: bg,
+          borderRadius: radius,
+          elevation: elevation,
+          clipsContent: clips,
+        );
+      }
+    }
+  }
+
+  // FittedBox → boxFit 추출
+  if (widget is FittedBox) {
+    final ro = element.renderObject;
+    if (ro != null) {
+      _boxFitByRenderObject[ro] = widget.fit.toString().split('.').last;
     }
   }
 
@@ -592,7 +670,9 @@ void _collectDesignInfoFromElements(Element element) {
         if (radians.abs() > 0.001) {
           final degrees = radians * 180.0 / math.pi;
           _rotationByRenderObject[ro] = degrees;
-          debugPrint('[Transform] captured rotation=${degrees.toStringAsFixed(2)}° for $ro');
+          debugPrint(
+            '[Transform] captured rotation=${degrees.toStringAsFixed(2)}° for $ro',
+          );
         }
       }
     } catch (e) {
@@ -648,12 +728,11 @@ Map<String, dynamic>? _extractGradient(dynamic gradient) {
         stops.add(i / (colors.length - 1));
       }
     }
-  } catch (_) { return null; }
+  } catch (_) {
+    return null;
+  }
 
-  final map = <String, dynamic>{
-    'colors': colors,
-    'stops': stops,
-  };
+  final map = <String, dynamic>{'colors': colors, 'stops': stops};
 
   final typeName = gradient.runtimeType.toString();
   if (typeName.contains('LinearGradient')) {
@@ -827,6 +906,38 @@ List<Map<String, dynamic>> _crawlThroughSliver(RenderObject sliver) {
   return results;
 }
 
+/// FittedBox 스케일 보정: Text fontSize + 자식 rect w/h 재귀 스케일
+void _applyFittedBoxScale(Map<String, dynamic> node, double scale) {
+  // Text → fontSize/letterSpacing 스케일
+  if (node['type'] == 'Text') {
+    final visual = node['visual'] as Map<String, dynamic>? ?? {};
+    final origSize = visual['fontSize'];
+    if (origSize is num) {
+      visual['fontSize'] = (origSize * scale * 10).floorToDouble() / 10.0;
+    }
+    final origSpacing = visual['letterSpacing'];
+    if (origSpacing is num && origSpacing != 0) {
+      visual['letterSpacing'] = (origSpacing * scale * 100).round() / 100.0;
+    }
+    node['visual'] = visual;
+  }
+
+  // 자식 노드의 rect w/h 스케일 (아이콘 등 비텍스트 자식 포함)
+  final children = node['children'] as List?;
+  if (children != null) {
+    for (final child in children) {
+      if (child is Map<String, dynamic>) {
+        final rect = child['rect'] as Map<String, dynamic>?;
+        if (rect != null) {
+          if (rect['w'] is num) rect['w'] = (rect['w'] as num) * scale;
+          if (rect['h'] is num) rect['h'] = (rect['h'] as num) * scale;
+        }
+        _applyFittedBoxScale(child, scale);
+      }
+    }
+  }
+}
+
 /// 메인 크롤 함수: RenderObject → 새 스키마 노드
 Map<String, dynamic>? _crawl(RenderObject? node) {
   if (node == null) return null;
@@ -976,11 +1087,16 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
                   final s = child.style;
                   if (s != null) {
                     if (s.fontSize != null) spanMap['fontSize'] = s.fontSize;
-                    if (s.fontWeight != null) spanMap['fontWeight'] = s.fontWeight.toString();
-                    if (s.color != null) spanMap['color'] = _colorToHex(s.color);
-                    if (s.fontFamily != null) spanMap['fontFamily'] = s.fontFamily;
-                    if (s.letterSpacing != null) spanMap['letterSpacing'] = s.letterSpacing;
-                    if (s.height != null) spanMap['lineHeightMultiplier'] = s.height;
+                    if (s.fontWeight != null)
+                      spanMap['fontWeight'] = s.fontWeight.toString();
+                    if (s.color != null)
+                      spanMap['color'] = _colorToHex(s.color);
+                    if (s.fontFamily != null)
+                      spanMap['fontFamily'] = s.fontFamily;
+                    if (s.letterSpacing != null)
+                      spanMap['letterSpacing'] = s.letterSpacing;
+                    if (s.height != null)
+                      spanMap['lineHeightMultiplier'] = s.height;
                   }
                   spans.add(spanMap);
                   charOffset += spanText.length;
@@ -991,7 +1107,8 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
               visual['textSpans'] = spans;
             }
             // 최상위 style이 없으면 첫 번째 자식 style을 fallback
-            if (style == null || (style.fontSize == null && style.fontWeight == null)) {
+            if (style == null ||
+                (style.fontSize == null && style.fontWeight == null)) {
               final first = spanChildren.first;
               if (first is TextSpan && first.style != null) {
                 style = first.style;
@@ -1373,6 +1490,11 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         // BoxShape.circle → borderRadius = shortestSide / 2
         if (decoration.shape == BoxShape.circle) {
           visual['borderRadius'] = node.size.shortestSide / 2;
+        } else if (decoration.borderRadius is BorderRadius) {
+          final brVal = _extractBorderRadius(
+            decoration.borderRadius as BorderRadius,
+          );
+          if (brVal != null) visual['borderRadius'] = brVal;
         } else {
           final br = _parseBorderRadius(decoration.borderRadius);
           if (br != null) visual['borderRadius'] = br;
@@ -1405,8 +1527,15 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
             };
             hasVisual = true;
           }
-          final br = _parseBorderRadius(shape.borderRadius);
-          if (br != null) visual['borderRadius'] = br;
+          if (shape.borderRadius is BorderRadius) {
+            final brVal = _extractBorderRadius(
+              shape.borderRadius as BorderRadius,
+            );
+            if (brVal != null) visual['borderRadius'] = brVal;
+          } else {
+            final br = _parseBorderRadius(shape.borderRadius);
+            if (br != null) visual['borderRadius'] = br;
+          }
         } else if (shape is StadiumBorder) {
           final side = shape.side;
           if (side.width > 0 && side.style == BorderStyle.solid) {
@@ -1452,6 +1581,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     visual['backgroundColor'] = _colorToHex(node.color);
     if (node.elevation > 0) {
       visual['shadow'] = {'elevation': node.elevation};
+    }
+    if (node.clipBehavior != Clip.none) {
+      visual['clipsContent'] = true;
     }
     try {
       dynamic d = node;
@@ -1503,6 +1635,38 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     } catch (_) {}
   }
   // ---------------------------------------------------
+  // [8.3] RenderOpacity
+  // ---------------------------------------------------
+  else if (node is RenderOpacity) {
+    // Opacity 값을 자식에 전파
+    final double opacityValue = node.opacity;
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        final childVisual =
+            childResult['visual'] as Map<String, dynamic>? ?? {};
+        childVisual['opacity'] = opacityValue;
+        childResult['visual'] = childVisual;
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
+        };
+        return childResult;
+      }
+    }
+    type = 'Frame';
+    layoutMode = 'NONE';
+    visual['opacity'] = opacityValue;
+  }
+  // ---------------------------------------------------
   // [8.5] RenderClipRRect
   // ---------------------------------------------------
   else if (node is RenderClipRRect) {
@@ -1545,6 +1709,44 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     type = 'Frame';
     layoutMode = 'NONE';
     if (brValue != null) visual['borderRadius'] = brValue;
+  }
+  // ---------------------------------------------------
+  // [8.52] RenderClipOval
+  // ---------------------------------------------------
+  else if (node is RenderClipOval) {
+    // 원형 클리핑: borderRadius = min(width, height) / 2
+    final double ovalRadius = math.min(node.size.width, node.size.height) / 2;
+
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        final childVisual =
+            childResult['visual'] as Map<String, dynamic>? ?? {};
+        if (!childVisual.containsKey('borderRadius')) {
+          childVisual['borderRadius'] = ovalRadius;
+          childResult['visual'] = childVisual;
+        }
+        childVisual['clipsContent'] = true;
+        childResult['visual'] = childVisual;
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
+        };
+        return childResult;
+      }
+    }
+    type = 'Frame';
+    layoutMode = 'NONE';
+    visual['borderRadius'] = ovalRadius;
+    visual['clipsContent'] = true;
   }
   // ---------------------------------------------------
   // [8.55] RenderBackdropFilter → backgroundBlur
@@ -1672,6 +1874,84 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     }
   }
   // ---------------------------------------------------
+  // [8.7] RenderFittedBox
+  // ---------------------------------------------------
+  else if (node is RenderFittedBox) {
+    final String? boxFit = _boxFitByRenderObject[node];
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final sc = singleChild!;
+      final childResult = _crawl(sc);
+      if (childResult != null) {
+        final double parentW = node.size.width;
+        final double parentH = node.size.height;
+        final double childW = sc.size.width;
+        final double childH = sc.size.height;
+
+        double scaleX = childW > 0 ? parentW / childW : 1.0;
+        double scaleY = childH > 0 ? parentH / childH : 1.0;
+        final String fitKey = (boxFit ?? 'contain').toLowerCase();
+        double scale;
+        if (fitKey == 'cover') {
+          scale = math.max(scaleX, scaleY);
+        } else if (fitKey == 'fitwidth') {
+          scale = scaleX;
+        } else if (fitKey == 'fitheight') {
+          scale = scaleY;
+        } else if (fitKey == 'none') {
+          scale = 1.0;
+        } else {
+          // contain, scaleDown, fill → 모두 min(scaleX, scaleY) 사용
+          // fill은 비균일 스케일이지만 fontSize는 균일만 가능하므로 contain으로 근사
+          scale = math.min(scaleX, scaleY);
+          if (fitKey == 'scaledown' && scale > 1.0) scale = 1.0;
+        }
+
+        // 자식 트리 전체 스케일 보정 (Text fontSize + 자식 rect w/h)
+        if (scale != 1.0) {
+          _applyFittedBoxScale(childResult, scale);
+        }
+        // FittedBox 자식은 정확한 크기가 보장되므로 fixedSize 마킹
+        final cl = childResult['childLayout'] as Map<String, dynamic>? ?? {};
+        cl['fixedSize'] = true;
+        cl['fixedWidth'] = true;
+        cl['fixedHeight'] = true;
+        childResult['childLayout'] = cl;
+
+        // FittedBox alignment (기본 center)
+        if (childResult['type'] == 'Frame') {
+          // Frame 자식 → containerLayout으로 중앙 정렬
+          final containerLayout =
+              childResult['containerLayout'] as Map<String, dynamic>? ?? {};
+          containerLayout['mainAxisAlignment'] = 'center';
+          containerLayout['crossAxisAlignment'] = 'center';
+          childResult['containerLayout'] = containerLayout;
+        } else if (childResult['type'] == 'Text') {
+          // Text 자식 → visual에 중앙 정렬 플래그
+          final childVisual =
+              childResult['visual'] as Map<String, dynamic>? ?? {};
+          childVisual['textAlignVertical'] = 'center';
+          childResult['visual'] = childVisual;
+        }
+
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': parentW,
+          'h': parentH,
+        };
+        return childResult;
+      }
+    }
+    type = 'Frame';
+    layoutMode = 'NONE';
+  }
+  // ---------------------------------------------------
   // [9] Picture / CustomPaint
   // ---------------------------------------------------
   else if (runtimeTypeStr.contains('Picture') ||
@@ -1752,6 +2032,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     if (designInfo.elevation != null && designInfo.elevation! > 0) {
       visual['shadow'] = {'elevation': designInfo.elevation};
     }
+    if (designInfo.clipsContent) visual['clipsContent'] = true;
     if (designInfo.isTextField) visual['isTextField'] = true;
     if (designInfo.isDivider) visual['isDivider'] = true;
   }
@@ -1835,7 +2116,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
               try {
                 final childOffset = child.localToGlobal(Offset.zero);
                 final pos = isHorizontal ? childOffset.dx : childOffset.dy;
-                final size = isHorizontal ? child.size.width : child.size.height;
+                final size = isHorizontal
+                    ? child.size.width
+                    : child.size.height;
                 _childMainAxisPositions.add(pos);
                 if (_lastChildEnd != null) {
                   final gap = pos - _lastChildEnd!;
@@ -2174,6 +2457,25 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   if (_widgetNameByRenderObject.containsKey(node)) {
     result['widgetName'] = _widgetNameByRenderObject[node];
   }
+
+  // clipsContent 전파: 부모가 clipsContent + borderRadius 이면,
+  // 동일 borderRadius를 가진 직계 자식에도 clipsContent 전파
+  // (Card → Material 구조: RenderPhysicalModel → RenderDecoratedBox 중복 방지)
+  if (visual['clipsContent'] == true && visual['borderRadius'] != null) {
+    final parentBr = visual['borderRadius'];
+    for (final child in children) {
+      if (child is Map<String, dynamic>) {
+        final cv = child['visual'] as Map<String, dynamic>?;
+        if (cv != null &&
+            cv['borderRadius'] != null &&
+            cv['borderRadius'].toString() == parentBr.toString() &&
+            cv['clipsContent'] != true) {
+          cv['clipsContent'] = true;
+        }
+      }
+    }
+  }
+
   // childLayout은 부모가 설정 (위에서 이미 설정됨)
   return result;
 }
@@ -2241,6 +2543,7 @@ String figmaExtractorEntryPoint() {
     _shaderMaskWidgets.clear();
     _customPainterByRO.clear();
     _clipperByRenderObject.clear();
+    _boxFitByRenderObject.clear();
     // _shaderMaskGradients, _clipPathPoints는 async phase에서 채워지므로 여기서 clear하지 않음
 
     final rootElement = WidgetsBinding.instance.renderViewElement;
@@ -2314,12 +2617,14 @@ List<ScrollPosition> _collectScrollPositions(Element? rootElement) {
     final widget = element.widget;
     if (widget is Scrollable) {
       try {
-        final scrollable = (element as StatefulElement).state as ScrollableState;
+        final scrollable =
+            (element as StatefulElement).state as ScrollableState;
         positions.add(scrollable.position);
       } catch (_) {}
     }
     element.visitChildren(visit);
   }
+
   rootElement.visitChildren(visit);
   return positions;
 }
@@ -2338,6 +2643,7 @@ Future<String> _figmaExportWithImagesAsync() async {
   _customPainterByRO.clear();
   _clipperByRenderObject.clear();
   _clipPathPoints.clear();
+  _boxFitByRenderObject.clear();
 
   // Phase 0: Element tree 순회 → _customPaintCaptures 등록 (pre-capture에 필요)
   final rootElement = WidgetsBinding.instance.renderViewElement;
@@ -2419,8 +2725,9 @@ Future<String> _figmaExportWithImagesAsync() async {
   return result;
 }
 
-/// CLI에서 호출: evaluate('figmaStartExportWithImages()')
-void figmaStartExportWithImages() {
+/// CLI에서 호출: evaluate('figmaStartExportWithImages()') 또는 figmaStartExportWithImages(4.0)
+void figmaStartExportWithImages([double pixelRatio = 3.0]) {
+  _capturePixelRatio = pixelRatio;
   _asyncExportBusy = true;
   _asyncExportResult = null;
   _figmaExportWithImagesAsync()

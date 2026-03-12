@@ -113,6 +113,10 @@ Register the extractor as an External Tool for one-click extraction:
 | Text       | Font size, Weight, Color, Alignment, Letter spacing   |
 | Grid       | GridView with mainAxisSpacing and crossAxisSpacing     |
 
+## Known Limitations
+
+Some Flutter widgets cannot be perfectly reproduced in Figma due to API constraints. See [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) for details.
+
 ## Project Structure
 
 ```

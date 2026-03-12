@@ -56,8 +56,24 @@ figma.ui.onmessage = function (msg) {
 function normalizeSchemaV2(node) {
   if (!node || typeof node !== "object") return;
 
-  // 자식 먼저 재귀
+  // clipsContent 전파 (재귀 전): 부모가 clipsContent + borderRadius이면
+  // 동일 borderRadius를 가진 직계 자식에도 clipsContent 전파
+  // (Card → Material 구조: RenderPhysicalModel → RenderDecoratedBox)
   var children = node.children || [];
+  var pVis = node.visual || {};
+  if (pVis.clipsContent === true && pVis.borderRadius != null) {
+    var pBr = String(pVis.borderRadius);
+    for (var ci = 0; ci < children.length; ci++) {
+      var ch = children[ci];
+      if (ch && ch.visual && ch.visual.borderRadius != null &&
+          String(ch.visual.borderRadius) === pBr &&
+          ch.visual.clipsContent !== true) {
+        ch.visual.clipsContent = true;
+      }
+    }
+  }
+
+  // 자식 재귀
   for (var i = 0; i < children.length; i++) {
     normalizeSchemaV2(children[i]);
   }
@@ -739,6 +755,19 @@ function assignSizingHints(node, parentProps) {
         node._sizingV = "FILL";
       }
     }
+
+    // Text + 부모 cross=stretch → cross축 FILL
+    if (crossIsStretch) {
+      if (parentLayoutMode === "VERTICAL") {
+        node._sizingH = "FILL";
+      } else if (parentLayoutMode === "HORIZONTAL") {
+        node._sizingV = "FILL";
+      }
+    }
+
+    // 크롤러가 명시적으로 sizingH/sizingV를 설정한 경우 반영
+    if (props.sizingH === "FILL") node._sizingH = "FILL";
+    if (props.sizingV === "FILL") node._sizingV = "FILL";
   } else if (node.type === "Frame") {
     node._sizingH = "FIXED";
     node._sizingV = "FIXED";
@@ -1045,6 +1074,15 @@ function renderNode(node, parentFigma, parentLayoutDir) {
       figNode = figma.createText();
       applyTextProps(figNode, props);
       figNode.resize(rw, rh);
+      // FittedBox 등으로 fixedSize 마킹된 텍스트는 고정 크기 텍스트 박스 (줄바꿈 방지)
+      if (props.fixedSize) {
+        figNode.textAutoResize = "TRUNCATE";
+        figNode.textTruncation = "DISABLED";
+      }
+      // 세로 중앙 정렬 (FittedBox alignment 등)
+      if (props.textAlignVertical === "center") {
+        figNode.textAlignVertical = "CENTER";
+      }
     } else if (node.type === "Image") {
       // --- Image 노드 ---
       figNode = figma.createRectangle();
@@ -1102,6 +1140,11 @@ function renderNode(node, parentFigma, parentLayoutDir) {
   if (!figNode) return;
 
   figNode.name = generateNodeName(node);
+
+  // Opacity
+  if (props.opacity != null && typeof props.opacity === "number" && props.opacity < 1) {
+    figNode.opacity = props.opacity;
+  }
 
   // Rotation은 위치 확정 후 적용 (아래에서 처리)
   var pendingRotation = 0;
@@ -1306,7 +1349,9 @@ function applyVisualProps(frame, props) {
     try {
       var bytes = base64ToUint8Array(props.backgroundImageBase64);
       var image = figma.createImage(bytes);
-      var scaleMode = mapImageFit(props.imageFit || "cover");
+      var scaleMode = props.boxFit
+        ? mapBoxFitToScaleMode(props.boxFit)
+        : mapImageFit(props.imageFit || "cover");
       frame.fills = [{
         type: "IMAGE",
         imageHash: image.hash,
@@ -1755,7 +1800,10 @@ function applyImageProps(rectNode, props) {
   try {
     var bytes = base64ToUint8Array(b64);
     var image = figma.createImage(bytes);
-    var scaleMode = mapImageFit(props.imageFit || "cover");
+    // boxFit이 있으면 우선 사용, 없으면 imageFit 사용
+    var scaleMode = props.boxFit
+      ? mapBoxFitToScaleMode(props.boxFit)
+      : mapImageFit(props.imageFit || "cover");
 
     rectNode.fills = [{
       type: "IMAGE",
@@ -1841,7 +1889,18 @@ function mapTextAlign(textAlign) {
 // --- Image fit 매핑 ---
 function mapImageFit(fit) {
   var key = String(fit || "").toLowerCase();
-  if (key === "contain") return "FIT";
+  if (key === "contain" || key === "fitwidth" || key === "fitheight") return "FIT";
+  if (key === "none" || key === "scaledown") return "FIT";
+  return "FILL";
+}
+
+// --- BoxFit → Figma scaleMode 매핑 ---
+function mapBoxFitToScaleMode(fit) {
+  var key = String(fit || "").toLowerCase();
+  if (key === "contain" || key === "fitwidth" || key === "fitheight" || key === "scaledown") return "FIT";
+  if (key === "cover") return "FILL";
+  if (key === "fill") return "FILL";
+  if (key === "none") return "FIT";
   return "FILL";
 }
 
