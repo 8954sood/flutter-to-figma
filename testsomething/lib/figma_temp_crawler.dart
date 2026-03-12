@@ -55,6 +55,8 @@ final Map<RenderObject, double> _rotationByRenderObject = {};
 final Map<RenderObject, ShaderMask> _shaderMaskWidgets = {};
 final Map<RenderObject, Map<String, dynamic>> _shaderMaskGradients = {};
 final Map<RenderObject, CustomPainter> _customPainterByRO = {};
+final Map<RenderObject, CustomClipper<Path>> _clipperByRenderObject = {};
+final Map<RenderObject, List<Map<String, double>>> _clipPathPoints = {};
 String? _asyncExportResult;
 bool _asyncExportBusy = false;
 
@@ -547,6 +549,14 @@ void _collectDesignInfoFromElements(Element element) {
         _customPainterByRO[ro] = cp.painter!;
         _markCaptureRecursive(ro);
       }
+    }
+  }
+
+  // ClipPath → clipper 등록 (async phase에서 Path 샘플링)
+  if (widget is ClipPath) {
+    final ro = element.renderObject;
+    if (ro != null && widget.clipper != null) {
+      _clipperByRenderObject[ro] = widget.clipper!;
     }
   }
 
@@ -1102,6 +1112,34 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       }
     }
 
+    // Padding + RenderDecoratedBox → margin 패턴 (Container(margin:...))
+    // 투명 wrapper Frame(auto-layout + padding)으로 margin 표현
+    // → 자식 요소 크기는 유지, wrapper의 padding이 margin 역할
+    if (childCount == 1 && singleChild is RenderDecoratedBox) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        return <String, dynamic>{
+          'type': 'Frame',
+          'layoutMode': 'COLUMN',
+          'rect': {
+            'x': offset.dx,
+            'y': offset.dy,
+            'w': node.size.width,
+            'h': node.size.height,
+          },
+          'visual': <String, dynamic>{},
+          'containerLayout': <String, dynamic>{
+            'padding': paddingMap,
+            'mainAxisAlignment': 'start',
+            'crossAxisAlignment': 'stretch',
+            'mainAxisSize': 'min',
+            'itemSpacing': 0.0,
+          },
+          'children': [childResult],
+        };
+      }
+    }
+
     // 기타: Frame(COLUMN) + padding
     // RenderPadding은 tight constraints를 자식에게 전달 → stretch가 올바른 매핑
     type = 'Frame';
@@ -1120,6 +1158,13 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     type = 'Frame';
     layoutMode = 'STACK';
     isLayoutNode = true;
+    // Stack의 clipBehavior 추출 (기본값: Clip.hardEdge)
+    try {
+      final clip = node.clipBehavior;
+      if (clip != Clip.none) {
+        visual['clipsContent'] = true;
+      }
+    } catch (_) {}
   }
   // ---------------------------------------------------
   // [3.5] RenderPositionedBox (Align / Center / Container.alignment)
@@ -1575,6 +1620,8 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   // [8.6] RenderClipPath
   // ---------------------------------------------------
   else if (runtimeTypeStr.contains('RenderClipPath')) {
+    final clipPoints = _clipPathPoints[node];
+
     RenderBox? singleChild;
     int childCount = 0;
     node.visitChildren((child) {
@@ -1590,11 +1637,17 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           'w': node.size.width,
           'h': node.size.height,
         };
+        if (clipPoints != null && clipPoints.isNotEmpty) {
+          childResult['clipPath'] = clipPoints;
+        }
         return childResult;
       }
     }
     type = 'Frame';
     layoutMode = 'NONE';
+    if (clipPoints != null && clipPoints.isNotEmpty) {
+      visual['clipPath'] = clipPoints;
+    }
   }
   // ---------------------------------------------------
   // [9] Picture / CustomPaint
@@ -2165,7 +2218,8 @@ String figmaExtractorEntryPoint() {
     _rotationByRenderObject.clear();
     _shaderMaskWidgets.clear();
     _customPainterByRO.clear();
-    // _shaderMaskGradients는 async phase에서 채워지므로 여기서 clear하지 않음
+    _clipperByRenderObject.clear();
+    // _shaderMaskGradients, _clipPathPoints는 async phase에서 채워지므로 여기서 clear하지 않음
 
     final rootElement = WidgetsBinding.instance.renderViewElement;
     if (rootElement != null) {
@@ -2260,6 +2314,8 @@ Future<String> _figmaExportWithImagesAsync() async {
   _shaderMaskWidgets.clear();
   _shaderMaskGradients.clear();
   _customPainterByRO.clear();
+  _clipperByRenderObject.clear();
+  _clipPathPoints.clear();
 
   // Phase 0: Element tree 순회 → _customPaintCaptures 등록 (pre-capture에 필요)
   final rootElement = WidgetsBinding.instance.renderViewElement;
@@ -2270,6 +2326,38 @@ Future<String> _figmaExportWithImagesAsync() async {
   }
 
   final root = RendererBinding.instance.renderView;
+
+  // Phase 0.2: ClipPath path 샘플링
+  _clipPathPoints.clear();
+  for (final entry in _clipperByRenderObject.entries) {
+    final ro = entry.key;
+    final clipper = entry.value;
+    if (ro is RenderBox && ro.hasSize) {
+      try {
+        final path = clipper.getClip(ro.size);
+        final points = <Map<String, double>>[];
+        for (final metric in path.computeMetrics()) {
+          const step = 2.0;
+          for (double d = 0; d <= metric.length; d += step) {
+            final tangent = metric.getTangentForOffset(d);
+            if (tangent != null) {
+              points.add({'x': tangent.position.dx, 'y': tangent.position.dy});
+            }
+          }
+          final last = metric.getTangentForOffset(metric.length);
+          if (last != null) {
+            points.add({'x': last.position.dx, 'y': last.position.dy});
+          }
+        }
+        if (points.isNotEmpty) {
+          _clipPathPoints[ro] = points;
+          debugPrint('[ClipPath] sampled ${points.length} points for $ro');
+        }
+      } catch (e) {
+        debugPrint('[ClipPath] path sampling failed: $e');
+      }
+    }
+  }
 
   // Phase 0.3: ShaderMask gradient 추출 (render tree에서 캡처 후 픽셀 샘플링)
   await _extractShaderMaskGradients(root);

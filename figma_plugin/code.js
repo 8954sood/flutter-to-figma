@@ -219,6 +219,10 @@ function flattenEmptyWrappers(node) {
     if (node.widgetName && !child.widgetName) {
       child.widgetName = node.widgetName;
     }
+    // clipPath 전파
+    if (node.clipPath && !child.clipPath) {
+      child.clipPath = node.clipPath;
+    }
     return child;
   }
 
@@ -439,6 +443,14 @@ function mergeWrapperChains(node) {
   merged.properties = mergedProps;
   // rect: 바깥쪽 사용 (전체 바운딩 박스)
   merged.rect = chain[0].rect || merged.rect;
+
+  // clipPath: 체인 중 clipPath를 가진 노드가 있으면 보존
+  for (var ci = 0; ci < chain.length; ci++) {
+    if (chain[ci].clipPath) {
+      merged.clipPath = chain[ci].clipPath;
+      break;
+    }
+  }
 
   return merged;
 }
@@ -1228,6 +1240,58 @@ function renderNode(node, parentFigma, parentLayoutDir) {
     var ntx = ncx - (rw / 2 * ncosR + rh / 2 * nsinR);
     var nty = ncy - (-rw / 2 * nsinR + rh / 2 * ncosR);
     figNode.relativeTransform = [[ncosR, nsinR, ntx], [-nsinR, ncosR, nty]];
+  }
+
+  // clipPath: 벡터 마스크로 클리핑 (wrapper frame 방식)
+  // Figma mask는 sibling만 클립하므로, frame의 fills까지 클립하려면
+  // wrapper frame 안에 mask + 원본 frame을 배치해야 함
+  var clipPoints = node.clipPath || props.clipPath;
+  if (clipPoints && clipPoints.length > 2 && figNode.type === "FRAME") {
+    var svgPath = "M " + clipPoints[0].x + " " + clipPoints[0].y;
+    for (var ci = 1; ci < clipPoints.length; ci++) {
+      svgPath += " L " + clipPoints[ci].x + " " + clipPoints[ci].y;
+    }
+    svgPath += " Z";
+
+    var maskVector = figma.createVector();
+    maskVector.vectorPaths = [{ windingRule: "NONZERO", data: svgPath }];
+    maskVector.resize(rw, rh);
+    maskVector.fills = [{ type: "SOLID", color: {r:1,g:1,b:1}, opacity: 1 }];
+    maskVector.name = "ClipPath_mask";
+    maskVector.isMask = true;
+
+    // wrapper frame 생성
+    var clipWrapper = figma.createFrame();
+    clipWrapper.name = figNode.name + "_clipped";
+    clipWrapper.resize(rw, rh);
+    clipWrapper.fills = [];
+    clipWrapper.clipsContent = true;
+    clipWrapper.layoutMode = "NONE";
+
+    // figNode의 부모에서 figNode 위치에 wrapper 삽입
+    var figParent = figNode.parent;
+    if (figParent) {
+      var figIdx = -1;
+      for (var fi = 0; fi < figParent.children.length; fi++) {
+        if (figParent.children[fi] === figNode) { figIdx = fi; break; }
+      }
+      if (figIdx >= 0) {
+        figParent.insertChild(figIdx, clipWrapper);
+      }
+    }
+
+    // mask + 원본 frame을 wrapper에 배치
+    clipWrapper.appendChild(maskVector);
+    clipWrapper.appendChild(figNode);
+    figNode.x = 0;
+    figNode.y = 0;
+
+    // 부모 auto-layout에서의 sizing을 wrapper에 전파
+    try {
+      clipWrapper.layoutSizingHorizontal = figNode.layoutSizingHorizontal;
+      clipWrapper.layoutSizingVertical = figNode.layoutSizingVertical;
+      if (figNode.layoutGrow > 0) clipWrapper.layoutGrow = figNode.layoutGrow;
+    } catch (e) {}
   }
 }
 
