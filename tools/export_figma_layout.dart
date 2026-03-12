@@ -278,15 +278,32 @@ InjectResult injectCrawler(String projectPath) {
 
 Future<void> main(List<String> args) async {
   final projectPath = Directory.current.path;
+
+  // ---- 인자 파싱 ----
+  String? vmUri;
+  double pixelRatio = 3.0;
+  final positionalArgs = <String>[];
+
+  for (final arg in args) {
+    if (arg.startsWith('--pixel-ratio=')) {
+      pixelRatio = double.tryParse(arg.split('=')[1]) ?? 3.0;
+    } else if (arg == '--pixel-ratio') {
+      // 다음 인자에서 값을 가져오기 위해 별도 처리 불필요 (=형태만 지원)
+    } else {
+      positionalArgs.add(arg);
+    }
+  }
+  pixelRatio = pixelRatio.clamp(1.0, 5.0);
+
   _log('========================================');
   _log(' Flutter → Figma Layout Exporter');
   _log('========================================');
   _log('[Project] $projectPath');
+  _log('[Settings] pixelRatio: ${pixelRatio}x');
 
   // ---- VM Service URI ----
-  String? vmUri;
-  if (args.isNotEmpty) {
-    vmUri = args[0];
+  if (positionalArgs.isNotEmpty) {
+    vmUri = positionalArgs[0];
     _log('[URI] 수동 지정: $vmUri');
   } else {
     vmUri = await discoverVmServiceUri();
@@ -384,7 +401,7 @@ Future<void> main(List<String> args) async {
         await rpcCall(ws, 'evaluate', {
           'isolateId': isolateId,
           'targetId': crawlerLib['id'],
-          'expression': 'figmaStartExportWithImages()',
+          'expression': 'figmaStartExportWithImages($pixelRatio)',
         });
 
         // Phase 2: 결과 폴링 (최대 30초)

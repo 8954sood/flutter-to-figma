@@ -57,6 +57,29 @@ dart run tools/generated_export_figma_layout.dart
 
 The tool auto-discovers the running Flutter app, injects the crawler, and outputs the layout JSON.
 
+#### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--pixel-ratio=<value>` | `3.0` | Image/icon capture resolution multiplier (range: 1.0–5.0) |
+
+```bash
+# High quality (default 3x)
+dart run tools/generated_export_figma_layout.dart
+
+# Maximum quality (5x) — larger JSON, sharper icons
+dart run tools/generated_export_figma_layout.dart --pixel-ratio=5
+
+# Smaller output (1x) — faster, lower resolution
+dart run tools/generated_export_figma_layout.dart --pixel-ratio=1
+```
+
+You can also pass a VM Service URI manually as a positional argument:
+
+```bash
+dart run tools/generated_export_figma_layout.dart ws://127.0.0.1:PORT/TOKEN=/ws --pixel-ratio=4
+```
+
 > **Hot Restart required:** When the crawler is first injected or updated to a new version, the tool will prompt you to hot restart. Press **Shift+R** in the Flutter terminal (or use the IDE restart button). The tool detects the restart automatically and continues. If the crawler version is already up to date, this step is skipped.
 
 ### 5. Import into Figma

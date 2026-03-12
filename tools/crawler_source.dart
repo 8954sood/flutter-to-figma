@@ -54,6 +54,9 @@ final Map<RenderObject, DesignInfo> _designInfoByRenderObject = {};
 final Set<RenderObject> _svgBoxTargets = {};
 final Map<RenderObject, String> _imageDataByNode = {};
 final Set<RenderObject> _customPaintCaptures = {};
+
+/// 이미지/아이콘 캡처 해상도 배율 (CLI --pixel-ratio 플래그로 제어)
+double _capturePixelRatio = 3.0;
 final Map<RenderObject, String> _widgetNameByRenderObject = {};
 final Map<RenderObject, double> _blurInfoByRenderObject = {};
 final Map<RenderObject, double> _rotationByRenderObject = {};
@@ -203,12 +206,12 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
 /// =======================================================
 
 Future<void> _preCaptureImages(RenderObject node) async {
-  // RenderImage → 축소 후 PNG 인코딩 (최대 512px)
+  // RenderImage → 축소 후 PNG 인코딩 (maxDim = 512 * pixelRatio)
   if (node is RenderImage) {
     try {
       final ui.Image? img = node.image;
       if (img != null) {
-        final maxDim = 512;
+        final maxDim = (512 * _capturePixelRatio).round();
         int targetW = img.width;
         int targetH = img.height;
         if (targetW > maxDim || targetH > maxDim) {
@@ -242,11 +245,15 @@ Future<void> _preCaptureImages(RenderObject node) async {
       final span = node.text;
       if (span is TextSpan &&
           span.style?.fontFamily?.contains('MaterialIcons') == true) {
+        final double pr = _capturePixelRatio;
+        final outW = (node.size.width * pr).ceil();
+        final outH = (node.size.height * pr).ceil();
         final recorder = ui.PictureRecorder();
         final canvas = Canvas(
           recorder,
-          Rect.fromLTWH(0, 0, node.size.width, node.size.height),
+          Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
         );
+        canvas.scale(pr);
         final painter = TextPainter(
           text: span,
           textDirection: TextDirection.ltr,
@@ -254,10 +261,7 @@ Future<void> _preCaptureImages(RenderObject node) async {
         painter.layout();
         painter.paint(canvas, Offset.zero);
         final picture = recorder.endRecording();
-        final img = await picture.toImage(
-          node.size.width.ceil(),
-          node.size.height.ceil(),
-        );
+        final img = await picture.toImage(outW, outH);
         final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
         if (byteData != null) {
           _imageDataByNode[node] = base64Encode(byteData.buffer.asUint8List());
@@ -275,7 +279,7 @@ Future<void> _preCaptureImages(RenderObject node) async {
       final w = node.size.width;
       final h = node.size.height;
       if (w > 0 && h > 0) {
-        const double pr = 2.0;
+        final double pr = _capturePixelRatio;
         final outW = (w * pr).round();
         final outH = (h * pr).round();
         final recorder = ui.PictureRecorder();
@@ -308,7 +312,7 @@ Future<void> _preCaptureImages(RenderObject node) async {
       final w = node.size.width;
       final h = node.size.height;
       if (w > 0 && h > 0) {
-        const double pr = 2.0;
+        final double pr = _capturePixelRatio;
         const double pad = 4.0;
         // 충분히 큰 RepaintBoundary를 찾음 (노드보다 사방 pad 이상 큰 것)
         RenderObject? ancestor = node.parent;
@@ -2464,8 +2468,9 @@ Future<String> _figmaExportWithImagesAsync() async {
   return result;
 }
 
-/// CLI에서 호출: evaluate('figmaStartExportWithImages()')
-void figmaStartExportWithImages() {
+/// CLI에서 호출: evaluate('figmaStartExportWithImages()') 또는 figmaStartExportWithImages(4.0)
+void figmaStartExportWithImages([double pixelRatio = 3.0]) {
+  _capturePixelRatio = pixelRatio;
   _asyncExportBusy = true;
   _asyncExportResult = null;
   _figmaExportWithImagesAsync()
