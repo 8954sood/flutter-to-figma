@@ -1126,6 +1126,34 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       }
     }
 
+    // Padding + RenderDecoratedBox → margin 패턴 (Container(margin:...))
+    // 투명 wrapper Frame(auto-layout + padding)으로 margin 표현
+    // → 자식 요소 크기는 유지, wrapper의 padding이 margin 역할
+    if (childCount == 1 && singleChild is RenderDecoratedBox) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        return <String, dynamic>{
+          'type': 'Frame',
+          'layoutMode': 'COLUMN',
+          'rect': {
+            'x': offset.dx,
+            'y': offset.dy,
+            'w': node.size.width,
+            'h': node.size.height,
+          },
+          'visual': <String, dynamic>{},
+          'containerLayout': <String, dynamic>{
+            'padding': paddingMap,
+            'mainAxisAlignment': 'start',
+            'crossAxisAlignment': 'stretch',
+            'mainAxisSize': 'min',
+            'itemSpacing': 0.0,
+          },
+          'children': [childResult],
+        };
+      }
+    }
+
     // 기타: Frame(COLUMN) + padding
     // RenderPadding은 tight constraints를 자식에게 전달 → stretch가 올바른 매핑
     type = 'Frame';
