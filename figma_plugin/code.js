@@ -1072,6 +1072,12 @@ function renderNode(node, parentFigma, parentLayoutDir) {
         applyVisualProps(figNode, props);
         // Auto-layout 적용
         applyAutoLayout(figNode, props);
+
+        // clipsContent: BackdropFilter blur 또는 Flutter clipsContent 속성
+        if ((props.backgroundBlur && typeof props.backgroundBlur === "number" && props.backgroundBlur > 0) ||
+            props.clipsContent === true) {
+          figNode.clipsContent = true;
+        }
       }
     }
   } catch (e) {
@@ -1083,9 +1089,10 @@ function renderNode(node, parentFigma, parentLayoutDir) {
 
   figNode.name = generateNodeName(node);
 
-  // Rotation (degrees → Figma uses negative convention)
+  // Rotation은 위치 확정 후 적용 (아래에서 처리)
+  var pendingRotation = 0;
   if (props.rotation != null && typeof props.rotation === "number" && Math.abs(props.rotation) > 0.01) {
-    figNode.rotation = -props.rotation;
+    pendingRotation = -props.rotation;  // Flutter CW → Figma CCW
   }
 
   // flexGrow + fixedSize 충돌: mergeWrapperChains가 Expanded 프레임과 내부 아이콘 체인을 병합한 경우
@@ -1134,6 +1141,17 @@ function renderNode(node, parentFigma, parentLayoutDir) {
         }
       }
     }
+    // flexGrow wrapper 경로에서도 relativeTransform으로 center 회전
+    if (pendingRotation !== 0) {
+      var frad = pendingRotation * Math.PI / 180;
+      var fcosR = Math.cos(frad);
+      var fsinR = Math.sin(frad);
+      var fcx = figNode.x + rw / 2;
+      var fcy = figNode.y + rh / 2;
+      var ftx = fcx - (rw / 2 * fcosR + rh / 2 * fsinR);
+      var fty = fcy - (-rw / 2 * fsinR + rh / 2 * fcosR);
+      figNode.relativeTransform = [[fcosR, fsinR, ftx], [-fsinR, fcosR, fty]];
+    }
     return;
   }
 
@@ -1155,24 +1173,61 @@ function renderNode(node, parentFigma, parentLayoutDir) {
       }
     }
 
-    // Stack 자식: 부모 rect 기준 상대 좌표로 절대 배치
+    // Stack 자식: 부모 rect 기준 상대 좌표로 절대 배치 → 그 후 rotation 적용
+    // (자식의 renderNode에서는 rotation 미적용 상태)
     if (props.isStack) {
       var parentRect = node.rect || {};
       var px = typeof parentRect.x === "number" ? parentRect.x : 0;
       var py = typeof parentRect.y === "number" ? parentRect.y : 0;
       for (var si = 0; si < children.length; si++) {
-        var childRect = (children[si] || {}).rect || {};
+        var child = children[si] || {};
+        var childRect = child.rect || {};
         var cx = typeof childRect.x === "number" ? childRect.x : 0;
         var cy = typeof childRect.y === "number" ? childRect.y : 0;
         try {
           var childFig = figNode.children[si];
           if (childFig) {
-            childFig.x = cx - px;
-            childFig.y = cy - py;
+            var origX = cx - px;
+            var origY = cy - py;
+            var childRot = (child.visual && child.visual.rotation) ||
+                           (child.properties && child.properties.rotation);
+            if (typeof childRot === "number" && Math.abs(childRot) > 0.01) {
+              // Flutter: center 기준 회전 / Figma: top-left 기준 회전
+              // → relativeTransform 직접 설정으로 center 보존
+              var cw = typeof childRect.w === "number" ? childRect.w : 0;
+              var ch = typeof childRect.h === "number" ? childRect.h : 0;
+              var figmaRotDeg = -childRot;  // Flutter CW → Figma CCW
+              var rad = figmaRotDeg * Math.PI / 180;
+              var cosR = Math.cos(rad);
+              var sinR = Math.sin(rad);
+              // Flutter visual center (unrotated rect 기준)
+              var centerX = origX + cw / 2;
+              var centerY = origY + ch / 2;
+              // relativeTransform: [[cosR, sinR, tx], [-sinR, cosR, ty]]
+              // center(w/2, h/2) → (centerX, centerY) 보존:
+              var tx = centerX - (cw / 2 * cosR + ch / 2 * sinR);
+              var ty = centerY - (-cw / 2 * sinR + ch / 2 * cosR);
+              childFig.relativeTransform = [[cosR, sinR, tx], [-sinR, cosR, ty]];
+            } else {
+              childFig.x = origX;
+              childFig.y = origY;
+            }
           }
         } catch (e) {}
       }
     }
+  }
+
+  // 비-Stack 노드: relativeTransform으로 center 기준 회전 적용
+  if (pendingRotation !== 0 && parentLayoutDir !== "NONE") {
+    var nrad = pendingRotation * Math.PI / 180;
+    var ncosR = Math.cos(nrad);
+    var nsinR = Math.sin(nrad);
+    var ncx = figNode.x + rw / 2;
+    var ncy = figNode.y + rh / 2;
+    var ntx = ncx - (rw / 2 * ncosR + rh / 2 * nsinR);
+    var nty = ncy - (-rw / 2 * nsinR + rh / 2 * ncosR);
+    figNode.relativeTransform = [[ncosR, nsinR, ntx], [-nsinR, ncosR, nty]];
   }
 }
 
@@ -1361,6 +1416,10 @@ function applyAutoLayout(frame, props) {
   // Stack은 절대 배치 → auto-layout 없음
   if (props.isStack) {
     frame.layoutMode = "NONE";
+    // Stack clipsContent는 Flutter clipBehavior 속성에 따라 결정 (props.clipsContent)
+    if (props.clipsContent === true) {
+      frame.clipsContent = true;
+    }
     return;
   }
   var mode = props.layoutMode;

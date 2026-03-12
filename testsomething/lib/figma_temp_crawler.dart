@@ -51,12 +51,137 @@ final Map<RenderObject, String> _imageDataByNode = {};
 final Set<RenderObject> _customPaintCaptures = {};
 final Map<RenderObject, String> _widgetNameByRenderObject = {};
 final Map<RenderObject, double> _blurInfoByRenderObject = {};
+final Map<RenderObject, double> _rotationByRenderObject = {};
+final Map<RenderObject, ShaderMask> _shaderMaskWidgets = {};
+final Map<RenderObject, Map<String, dynamic>> _shaderMaskGradients = {};
+final Map<RenderObject, CustomPainter> _customPainterByRO = {};
 String? _asyncExportResult;
 bool _asyncExportBusy = false;
 
 void _markCaptureRecursive(RenderObject ro) {
   _customPaintCaptures.add(ro);
   ro.visitChildren((child) => _markCaptureRecursive(child));
+}
+
+/// RenderShaderMask의 public shaderCallback getter를 dynamic dispatch로 접근,
+/// 사각형에 shader를 직접 칠한 뒤 픽셀 샘플링으로 gradient 추출
+Future<void> _extractShaderMaskGradients(RenderObject root) async {
+  final List<RenderBox> nodes = [];
+  void find(RenderObject ro) {
+    final name = ro.runtimeType.toString();
+    if (name.contains('ShaderMask') && ro is RenderBox && ro.hasSize) {
+      nodes.add(ro);
+    }
+    ro.visitChildren(find);
+  }
+  find(root);
+  debugPrint('[ShaderMask] found ${nodes.length} nodes');
+
+  for (final node in nodes) {
+    try {
+      final w = node.size.width;
+      final h = node.size.height;
+      if (w <= 0 || h <= 0) continue;
+
+      // dynamic dispatch로 shaderCallback 접근
+      final dynamic dynNode = node;
+      final Function callback = dynNode.shaderCallback as Function;
+      final rect = Offset.zero & Size(w, h);
+      final shader = callback(rect) as ui.Shader;
+      debugPrint('[ShaderMask] got shader from callback, size=${w}x${h}');
+
+      // 사각형 전체를 shader로 칠해서 캡처 (텍스트 형태가 아닌 full rect)
+      final sw = w.ceil().clamp(4, 64);
+      final sh = h.ceil().clamp(4, 64);
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, sw.toDouble(), sh.toDouble()),
+        Paint()..shader = shader,
+      );
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(sw, sh);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      image.dispose();
+      if (byteData == null) {
+        debugPrint('[ShaderMask] byteData null');
+        continue;
+      }
+
+      Color getPixel(int x, int y) {
+        x = x.clamp(0, sw - 1);
+        y = y.clamp(0, sh - 1);
+        final off = (y * sw + x) * 4;
+        return Color.fromARGB(
+          byteData.getUint8(off + 3),
+          byteData.getUint8(off),
+          byteData.getUint8(off + 1),
+          byteData.getUint8(off + 2),
+        );
+      }
+
+      double colorDist(Color a, Color b) =>
+          ((a.red - b.red).abs() + (a.green - b.green).abs() + (a.blue - b.blue).abs()).toDouble();
+
+      // 방향 판별
+      const n = 6;
+      double hVar = 0, vVar = 0;
+      for (int i = 1; i < n; i++) {
+        hVar += colorDist(
+          getPixel(((i - 1) * (sw - 1) ~/ (n - 1)), sh ~/ 2),
+          getPixel((i * (sw - 1) ~/ (n - 1)), sh ~/ 2),
+        );
+        vVar += colorDist(
+          getPixel(sw ~/ 2, ((i - 1) * (sh - 1) ~/ (n - 1))),
+          getPixel(sw ~/ 2, (i * (sh - 1) ~/ (n - 1))),
+        );
+      }
+      final bool isVert = vVar >= hVar;
+      debugPrint('[ShaderMask] hVar=$hVar vVar=$vVar isVert=$isVert');
+
+      // 색상 샘플링
+      const sc = 10;
+      final colors = <String>[];
+      final stops = <double>[];
+      for (int i = 0; i < sc; i++) {
+        final t = i / (sc - 1);
+        final c = isVert
+            ? getPixel(sw ~/ 2, (t * (sh - 1)).round())
+            : getPixel((t * (sw - 1)).round(), sh ~/ 2);
+        colors.add(_colorToHex(c)!);
+        stops.add(t);
+      }
+
+      // 간소화: 연속 중복 제거
+      final sC = <String>[colors.first];
+      final sS = <double>[stops.first];
+      for (int i = 1; i < colors.length - 1; i++) {
+        if (colors[i] != colors[i - 1] || colors[i] != colors[i + 1]) {
+          sC.add(colors[i]);
+          sS.add(stops[i]);
+        }
+      }
+      sC.add(colors.last);
+      sS.add(stops.last);
+
+      final gradient = <String, dynamic>{
+        'type': 'linear',
+        'colors': sC,
+        'stops': sS,
+        'begin': {'x': isVert ? 0.5 : 0.0, 'y': isVert ? 0.0 : 0.5},
+        'end': {'x': isVert ? 0.5 : 1.0, 'y': isVert ? 1.0 : 0.5},
+      };
+      debugPrint('[ShaderMask] gradient colors: $sC');
+
+      void mapAll(RenderObject obj) {
+        _shaderMaskGradients[obj] = gradient;
+        obj.visitChildren(mapAll);
+      }
+      node.visitChildren(mapAll);
+    } catch (e, st) {
+      debugPrint('[ShaderMask] ERROR: $e\n$st');
+    }
+  }
 }
 
 /// =======================================================
@@ -125,6 +250,35 @@ Future<void> _preCaptureImages(RenderObject node) async {
         }
       }
     } catch (_) {}
+  }
+
+  // CustomPaint with painter → 투명 배경에 painter만 직접 paint
+  if (node is RenderBox &&
+      _customPainterByRO.containsKey(node) &&
+      !_imageDataByNode.containsKey(node)) {
+    try {
+      final painter = _customPainterByRO[node]!;
+      final w = node.size.width;
+      final h = node.size.height;
+      if (w > 0 && h > 0) {
+        const double pr = 2.0;
+        final outW = (w * pr).round();
+        final outH = (h * pr).round();
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()));
+        canvas.scale(pr);
+        painter.paint(canvas, Size(w, h));
+        final picture = recorder.endRecording();
+        final img = await picture.toImage(outW, outH);
+        final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+        img.dispose();
+        if (byteData != null) {
+          _imageDataByNode[node] = base64Encode(byteData.buffer.asUint8List());
+        }
+      }
+    } catch (e) {
+      debugPrint('[CustomPainter] direct paint failed: $e');
+    }
   }
 
   // Checkbox / Switch 등 → 가장 가까운 RepaintBoundary에서 crop 캡처
@@ -380,21 +534,19 @@ void _collectDesignInfoFromElements(Element element) {
     }
   }
 
-  // ShaderMask → 서브트리 캡처 (gradient text 등)
-  if (widgetTypeName == 'ShaderMask') {
-    final ro = element.renderObject;
-    if (ro != null) {
-      _markCaptureRecursive(ro);
-    }
-  }
+  // ShaderMask → render tree 순회로 감지 (async phase에서 처리)
 
-  // CustomPaint with painter → 캡처 (장식 원 등 CustomPainter)
-  // 주의: _ShapeBorderPaint 등 Flutter 내부 위젯도 CustomPaint를 상속하므로
-  // runtimeType이 정확히 'CustomPaint'인 경우만 캡처 (사용자 정의 CustomPaint만)
-  if (widgetTypeName == 'CustomPaint' && (widget as CustomPaint).painter != null) {
-    final ro = element.renderObject;
-    if (ro != null) {
-      _markCaptureRecursive(ro);
+  // CustomPaint with painter → painter를 직접 빈 캔버스에 paint (투명 배경)
+  // child가 없는 leaf CustomPaint만 캡처 (순수 장식용)
+  // Flutter 내부 CustomPaint(child 있음: ink effect, indicator 등)는 스킵 → 자연 분해
+  if (widgetTypeName == 'CustomPaint') {
+    final cp = widget as CustomPaint;
+    if (cp.painter != null && cp.child == null) {
+      final ro = element.renderObject;
+      if (ro != null) {
+        _customPainterByRO[ro] = cp.painter!;
+        _markCaptureRecursive(ro);
+      }
     }
   }
 
@@ -415,6 +567,27 @@ void _collectDesignInfoFromElements(Element element) {
         }
       }
     } catch (_) {}
+  }
+
+  // Transform.rotate → angle 추출
+  if (widget is Transform) {
+    try {
+      final ro = element.renderObject;
+      if (ro != null) {
+        // Transform widget의 transform Matrix4에서 rotation 추출
+        final t = widget.transform;
+        final sinVal = t.entry(1, 0);
+        final cosVal = t.entry(0, 0);
+        final radians = math.atan2(sinVal, cosVal);
+        if (radians.abs() > 0.001) {
+          final degrees = radians * 180.0 / math.pi;
+          _rotationByRenderObject[ro] = degrees;
+          debugPrint('[Transform] captured rotation=${degrees.toStringAsFixed(2)}° for $ro');
+        }
+      }
+    } catch (e) {
+      debugPrint('[Transform] angle extraction failed: $e');
+    }
   }
 
   element.visitChildren(_collectDesignInfoFromElements);
@@ -815,6 +988,12 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           }
         }
       } catch (_) {}
+
+      // ShaderMask gradient → 텍스트에 gradient fill 적용
+      final smGradient = _shaderMaskGradients[node];
+      if (smGradient != null) {
+        visual['gradient'] = smGradient;
+      }
     }
   }
   // ---------------------------------------------------
@@ -1306,8 +1485,24 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   else if (runtimeTypeStr.contains('RenderBackdropFilter')) {
     type = 'Frame';
     layoutMode = 'NONE';
-    // blur sigma를 visual에 추가
-    final blurSigma = _blurInfoByRenderObject[node];
+    // blur sigma를 visual에 추가 (element tree 매핑 우선, 실패 시 직접 추출)
+    double? blurSigma = _blurInfoByRenderObject[node];
+    if (blurSigma == null || blurSigma <= 0) {
+      // fallback: RenderBackdropFilter.filter에서 직접 추출
+      try {
+        final filterObj = (node as dynamic).filter;
+        final filterStr = filterObj.toString();
+        // "sigmaX: 10.0" 형식
+        var m = RegExp(r'sigmaX:\s*([\d.]+)').firstMatch(filterStr);
+        // "blur(10.0, 10.0, ...)" 형식 (parameter name 없는 경우)
+        m ??= RegExp(r'blur\(([\d.]+)').firstMatch(filterStr);
+        if (m != null) {
+          blurSigma = double.tryParse(m.group(1)!) ?? 0;
+        }
+      } catch (e) {
+        debugPrint('[BackdropFilter] filter extraction failed: $e');
+      }
+    }
     if (blurSigma != null && blurSigma > 0) {
       visual['backgroundBlur'] = blurSigma;
       hasVisual = true;
@@ -1319,17 +1514,36 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   else if (runtimeTypeStr.contains('RenderTransform')) {
     type = 'Frame';
     layoutMode = 'NONE';
-    try {
-      // Matrix4에서 회전 각도 추출
-      final transform = (node as dynamic).transform as Matrix4;
-      final sinVal = transform.entry(1, 0);
-      final cosVal = transform.entry(0, 0);
-      final radians = math.atan2(sinVal, cosVal);
-      if (radians.abs() > 0.001) {
-        final degrees = radians * 180.0 / math.pi;
-        visual['rotation'] = degrees;
+    // 방법 1 (확실): widget tree에서 미리 캡처한 rotation 사용
+    final precomputed = _rotationByRenderObject[node];
+    if (precomputed != null && precomputed.abs() > 0.001) {
+      visual['rotation'] = precomputed;
+    } else {
+      // 방법 2 (fallback): RenderObject에서 직접 추출 시도
+      try {
+        Matrix4? transform;
+        try {
+          transform = (node as dynamic).transform as Matrix4?;
+        } catch (_) {}
+        transform ??= (() {
+          try {
+            final parent = node.parent;
+            if (parent is RenderObject) return node.getTransformTo(parent);
+          } catch (_) {}
+          return null;
+        })();
+        if (transform != null) {
+          final sinVal = transform.entry(1, 0);
+          final cosVal = transform.entry(0, 0);
+          final radians = math.atan2(sinVal, cosVal);
+          if (radians.abs() > 0.001) {
+            visual['rotation'] = radians * 180.0 / math.pi;
+          }
+        }
+      } catch (e) {
+        debugPrint('[RenderTransform] rotation extraction failed: $e');
       }
-    } catch (_) {}
+    }
     // 단일 자식이면 패스스루
     RenderBox? singleChild;
     int childCount = 0;
@@ -1948,6 +2162,10 @@ String figmaExtractorEntryPoint() {
     _widgetNameByRenderObject.clear();
     _customPaintCaptures.clear();
     _blurInfoByRenderObject.clear();
+    _rotationByRenderObject.clear();
+    _shaderMaskWidgets.clear();
+    _customPainterByRO.clear();
+    // _shaderMaskGradients는 async phase에서 채워지므로 여기서 clear하지 않음
 
     final rootElement = WidgetsBinding.instance.renderViewElement;
     if (rootElement != null) {
@@ -2038,6 +2256,10 @@ Future<String> _figmaExportWithImagesAsync() async {
   _imageDataByNode.clear();
   _customPaintCaptures.clear();
   _blurInfoByRenderObject.clear();
+  _rotationByRenderObject.clear();
+  _shaderMaskWidgets.clear();
+  _shaderMaskGradients.clear();
+  _customPainterByRO.clear();
 
   // Phase 0: Element tree 순회 → _customPaintCaptures 등록 (pre-capture에 필요)
   final rootElement = WidgetsBinding.instance.renderViewElement;
@@ -2048,6 +2270,9 @@ Future<String> _figmaExportWithImagesAsync() async {
   }
 
   final root = RendererBinding.instance.renderView;
+
+  // Phase 0.3: ShaderMask gradient 추출 (render tree에서 캡처 후 픽셀 샘플링)
+  await _extractShaderMaskGradients(root);
 
   // Phase 0.5: 스크롤 뷰 pre-scroll → viewport 밖 위젯도 paint 강제
   final scrollPositions = _collectScrollPositions(rootElement);

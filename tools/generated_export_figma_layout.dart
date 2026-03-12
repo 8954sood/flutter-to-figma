@@ -75,6 +75,7 @@ final Map<RenderObject, String> _imageDataByNode = {};
 final Set<RenderObject> _customPaintCaptures = {};
 final Map<RenderObject, String> _widgetNameByRenderObject = {};
 final Map<RenderObject, double> _blurInfoByRenderObject = {};
+final Map<RenderObject, double> _rotationByRenderObject = {};
 final Map<RenderObject, ShaderMask> _shaderMaskWidgets = {};
 final Map<RenderObject, Map<String, dynamic>> _shaderMaskGradients = {};
 final Map<RenderObject, CustomPainter> _customPainterByRO = {};
@@ -590,6 +591,27 @@ void _collectDesignInfoFromElements(Element element) {
         }
       }
     } catch (_) {}
+  }
+
+  // Transform.rotate → angle 추출
+  if (widget is Transform) {
+    try {
+      final ro = element.renderObject;
+      if (ro != null) {
+        // Transform widget의 transform Matrix4에서 rotation 추출
+        final t = widget.transform;
+        final sinVal = t.entry(1, 0);
+        final cosVal = t.entry(0, 0);
+        final radians = math.atan2(sinVal, cosVal);
+        if (radians.abs() > 0.001) {
+          final degrees = radians * 180.0 / math.pi;
+          _rotationByRenderObject[ro] = degrees;
+          debugPrint('[Transform] captured rotation=${degrees.toStringAsFixed(2)}° for $ro');
+        }
+      }
+    } catch (e) {
+      debugPrint('[Transform] angle extraction failed: $e');
+    }
   }
 
   element.visitChildren(_collectDesignInfoFromElements);
@@ -1122,6 +1144,13 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     type = 'Frame';
     layoutMode = 'STACK';
     isLayoutNode = true;
+    // Stack의 clipBehavior 추출 (기본값: Clip.hardEdge)
+    try {
+      final clip = node.clipBehavior;
+      if (clip != Clip.none) {
+        visual['clipsContent'] = true;
+      }
+    } catch (_) {}
   }
   // ---------------------------------------------------
   // [3.5] RenderPositionedBox (Align / Center / Container.alignment)
@@ -1487,8 +1516,24 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   else if (runtimeTypeStr.contains('RenderBackdropFilter')) {
     type = 'Frame';
     layoutMode = 'NONE';
-    // blur sigma를 visual에 추가
-    final blurSigma = _blurInfoByRenderObject[node];
+    // blur sigma를 visual에 추가 (element tree 매핑 우선, 실패 시 직접 추출)
+    double? blurSigma = _blurInfoByRenderObject[node];
+    if (blurSigma == null || blurSigma <= 0) {
+      // fallback: RenderBackdropFilter.filter에서 직접 추출
+      try {
+        final filterObj = (node as dynamic).filter;
+        final filterStr = filterObj.toString();
+        // "sigmaX: 10.0" 형식
+        var m = RegExp(r'sigmaX:\s*([\d.]+)').firstMatch(filterStr);
+        // "blur(10.0, 10.0, ...)" 형식 (parameter name 없는 경우)
+        m ??= RegExp(r'blur\(([\d.]+)').firstMatch(filterStr);
+        if (m != null) {
+          blurSigma = double.tryParse(m.group(1)!) ?? 0;
+        }
+      } catch (e) {
+        debugPrint('[BackdropFilter] filter extraction failed: $e');
+      }
+    }
     if (blurSigma != null && blurSigma > 0) {
       visual['backgroundBlur'] = blurSigma;
       hasVisual = true;
@@ -1500,17 +1545,36 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   else if (runtimeTypeStr.contains('RenderTransform')) {
     type = 'Frame';
     layoutMode = 'NONE';
-    try {
-      // Matrix4에서 회전 각도 추출
-      final transform = (node as dynamic).transform as Matrix4;
-      final sinVal = transform.entry(1, 0);
-      final cosVal = transform.entry(0, 0);
-      final radians = math.atan2(sinVal, cosVal);
-      if (radians.abs() > 0.001) {
-        final degrees = radians * 180.0 / math.pi;
-        visual['rotation'] = degrees;
+    // 방법 1 (확실): widget tree에서 미리 캡처한 rotation 사용
+    final precomputed = _rotationByRenderObject[node];
+    if (precomputed != null && precomputed.abs() > 0.001) {
+      visual['rotation'] = precomputed;
+    } else {
+      // 방법 2 (fallback): RenderObject에서 직접 추출 시도
+      try {
+        Matrix4? transform;
+        try {
+          transform = (node as dynamic).transform as Matrix4?;
+        } catch (_) {}
+        transform ??= (() {
+          try {
+            final parent = node.parent;
+            if (parent is RenderObject) return node.getTransformTo(parent);
+          } catch (_) {}
+          return null;
+        })();
+        if (transform != null) {
+          final sinVal = transform.entry(1, 0);
+          final cosVal = transform.entry(0, 0);
+          final radians = math.atan2(sinVal, cosVal);
+          if (radians.abs() > 0.001) {
+            visual['rotation'] = radians * 180.0 / math.pi;
+          }
+        }
+      } catch (e) {
+        debugPrint('[RenderTransform] rotation extraction failed: $e');
       }
-    } catch (_) {}
+    }
     // 단일 자식이면 패스스루
     RenderBox? singleChild;
     int childCount = 0;
@@ -2129,6 +2193,7 @@ String figmaExtractorEntryPoint() {
     _widgetNameByRenderObject.clear();
     _customPaintCaptures.clear();
     _blurInfoByRenderObject.clear();
+    _rotationByRenderObject.clear();
     _shaderMaskWidgets.clear();
     _customPainterByRO.clear();
     // _shaderMaskGradients는 async phase에서 채워지므로 여기서 clear하지 않음
@@ -2222,6 +2287,7 @@ Future<String> _figmaExportWithImagesAsync() async {
   _imageDataByNode.clear();
   _customPaintCaptures.clear();
   _blurInfoByRenderObject.clear();
+  _rotationByRenderObject.clear();
   _shaderMaskWidgets.clear();
   _shaderMaskGradients.clear();
   _customPainterByRO.clear();
