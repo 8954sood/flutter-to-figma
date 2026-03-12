@@ -21,7 +21,7 @@ class DesignInfo {
   final Color? backgroundColor;
   final Color? borderColor;
   final double? borderWidth;
-  final double? borderRadius;
+  final dynamic borderRadius; // double (uniform) or Map {tl,tr,bl,br}
   final double? elevation;
   final bool isTextField;
   final bool isDivider;
@@ -383,7 +383,7 @@ void _collectDesignInfoFromElements(Element element) {
     Color? bg;
     Color? borderColor;
     double? borderWidth;
-    double? radius;
+    dynamic radius;
 
     if (deco.filled == true) {
       bg = deco.fillColor;
@@ -398,7 +398,7 @@ void _collectDesignInfoFromElements(Element element) {
       borderWidth = side.width;
       final br = border.borderRadius;
       if (br is BorderRadius) {
-        radius = br.topLeft.x;
+        radius = _extractBorderRadius(br);
       }
     }
 
@@ -429,7 +429,7 @@ void _collectDesignInfoFromElements(Element element) {
     Color? bg;
     Color? borderColor;
     double? borderWidth;
-    double? radius;
+    dynamic radius;
     double? borderTopW, borderRightW, borderBottomW, borderLeftW;
 
     if (deco is BoxDecoration) {
@@ -457,12 +457,12 @@ void _collectDesignInfoFromElements(Element element) {
       }
       final br = deco.borderRadius;
       if (br is BorderRadius) {
-        radius = br.topLeft.x;
+        radius = _extractBorderRadius(br);
       }
     }
 
     final ro = element.renderObject;
-    if (ro != null && (bg != null || borderColor != null)) {
+    if (ro != null && (bg != null || borderColor != null || radius != null)) {
       _designInfoByRenderObject[ro] = DesignInfo(
         backgroundColor: bg,
         borderColor: borderColor,
@@ -491,11 +491,11 @@ void _collectDesignInfoFromElements(Element element) {
     if (shape is OutlinedBorder) {
       final side = shape.side;
       if (side.width > 0 && side.style == BorderStyle.solid) {
-        double? radius;
+        dynamic radius;
         if (shape is RoundedRectangleBorder) {
           final br = shape.borderRadius;
           if (br is BorderRadius) {
-            radius = br.topLeft.x;
+            radius = _extractBorderRadius(br);
           }
         }
         final ro = element.renderObject;
@@ -615,6 +615,19 @@ double? _parseBorderRadius(dynamic br) {
   final m = RegExp(r'\d+\.?\d*').firstMatch(s);
   if (m != null) return double.tryParse(m.group(0)!);
   return double.tryParse(s);
+}
+
+/// BorderRadius에서 per-corner 값 추출
+/// uniform이면 단일 double, non-uniform이면 {tl, tr, bl, br} Map 반환
+dynamic _extractBorderRadius(BorderRadius br) {
+  final tl = br.topLeft.x;
+  final tr = br.topRight.x;
+  final bl = br.bottomLeft.x;
+  final bRight = br.bottomRight.x;
+  if (tl == tr && tr == bl && bl == bRight) {
+    return tl; // uniform
+  }
+  return {'tl': tl, 'tr': tr, 'bl': bl, 'br': bRight};
 }
 
 /// gradient 추출 (LinearGradient, RadialGradient, SweepGradient)
@@ -1493,7 +1506,16 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   // [8.5] RenderClipRRect
   // ---------------------------------------------------
   else if (node is RenderClipRRect) {
-    final br = _parseBorderRadius(node.borderRadius);
+    // per-corner radius 추출
+    dynamic brValue;
+    try {
+      final brr = node.borderRadius;
+      if (brr is BorderRadius) {
+        brValue = _extractBorderRadius(brr);
+      }
+    } catch (_) {}
+    brValue ??= _parseBorderRadius(node.borderRadius);
+
     RenderBox? singleChild;
     int childCount = 0;
     node.visitChildren((child) {
@@ -1503,11 +1525,11 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     if (childCount == 1 && singleChild != null) {
       final childResult = _crawl(singleChild);
       if (childResult != null) {
-        if (br != null && br > 0) {
+        if (brValue != null) {
           final childVisual =
               childResult['visual'] as Map<String, dynamic>? ?? {};
           if (!childVisual.containsKey('borderRadius')) {
-            childVisual['borderRadius'] = br;
+            childVisual['borderRadius'] = brValue;
             childResult['visual'] = childVisual;
           }
         }
@@ -1522,7 +1544,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     }
     type = 'Frame';
     layoutMode = 'NONE';
-    if (br != null && br > 0) visual['borderRadius'] = br;
+    if (brValue != null) visual['borderRadius'] = brValue;
   }
   // ---------------------------------------------------
   // [8.55] RenderBackdropFilter → backgroundBlur

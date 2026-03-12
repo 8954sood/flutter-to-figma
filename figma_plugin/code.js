@@ -101,7 +101,8 @@ function normalizeSchemaV2(node) {
         props.borderLeftWidth = vv.leftWidth;
       }
     } else if (vk === "borderRadius" && vv != null) {
-      props.borderRadius = String(vv);
+      // per-corner: {tl, tr, bl, br} 객체 또는 단일 숫자
+      props.borderRadius = (typeof vv === "object") ? vv : String(vv);
     } else if (vk === "shadow" && vv && typeof vv === "object") {
       if (vv.color != null) {
         props.shadowColor = vv.color;
@@ -1340,10 +1341,19 @@ function applyVisualProps(frame, props) {
     frame.strokes = [];
   }
 
-  // Corner radius
-  var br = parseBorderRadius(props.borderRadius);
-  if (br > 0) {
-    frame.cornerRadius = br;
+  // Corner radius (uniform 또는 per-corner)
+  var brVal = props.borderRadius;
+  if (brVal && typeof brVal === "object" && brVal.tl != null) {
+    // per-corner radius
+    frame.topLeftRadius = brVal.tl || 0;
+    frame.topRightRadius = brVal.tr || 0;
+    frame.bottomLeftRadius = brVal.bl || 0;
+    frame.bottomRightRadius = brVal.br || 0;
+  } else {
+    var br = parseBorderRadius(brVal);
+    if (br > 0) {
+      frame.cornerRadius = br;
+    }
   }
 
   // Effects (shadow + background blur 누적)
