@@ -1421,7 +1421,9 @@ function applyGradient(frame, props) {
     var cx = g.center ? g.center.x : 0.5;
     var cy = g.center ? g.center.y : 0.5;
     var r = g.radius || 0.5;
-    fill.gradientTransform = buildRadialGradientTransform(cx, cy, r);
+    var fw = frame.width || 100;
+    var fh = frame.height || 100;
+    fill.gradientTransform = buildRadialGradientTransform(cx, cy, r, fw, fh);
   } else if (g.type === "sweep") {
     fill.type = "GRADIENT_ANGULAR";
     var cx = g.center ? g.center.x : 0.5;
@@ -1458,18 +1460,29 @@ function buildLinearGradientTransform(bx, by, ex, ey) {
   return result;
 }
 
-function buildRadialGradientTransform(cx, cy, r) {
+// gradientTransform: element 공간 [0,1] → gradient 공간 [0,1] 매핑
+// gradient 공간에서 원의 중심은 (0.5, 0.5), 반지름은 0.5
+// Flutter RadialGradient.radius는 shortest side의 비율
+function buildRadialGradientTransform(cx, cy, r, frameW, frameH) {
+  var minDim = Math.min(frameW, frameH);
+  var radiusPx = r * minDim;
+  // 각 축의 normalized radius (element [0,1] 공간)
+  var rx = radiusPx / frameW;
+  var ry = radiusPx / frameH;
+  // gradient 반지름 0.5 → element 반지름 rx,ry 로 매핑
+  var sx = 1 / (2 * rx);
+  var sy = 1 / (2 * ry);
   return [
-    [r, 0, cx - r / 2],
-    [0, r, cy - r / 2]
+    [sx, 0, 0.5 - cx * sx],
+    [0, sy, 0.5 - cy * sy]
   ];
 }
 
+// Sweep(Angular) gradient: element → gradient, center만 매핑
 function buildSweepGradientTransform(cx, cy) {
-  var r = 0.5;
   return [
-    [r, 0, cx - r / 2],
-    [0, r, cy - r / 2]
+    [1, 0, 0.5 - cx],
+    [0, 1, 0.5 - cy]
   ];
 }
 
