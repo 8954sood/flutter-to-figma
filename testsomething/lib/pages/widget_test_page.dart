@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
 
-class WidgetTestPage extends StatelessWidget {
+class WidgetTestPage extends StatefulWidget {
   const WidgetTestPage({super.key});
+
+  @override
+  State<WidgetTestPage> createState() => _WidgetTestPageState();
+}
+
+class _WidgetTestPageState extends State<WidgetTestPage> {
+  int _radioValue = 0;
+  RangeValues _rangeValues = const RangeValues(20, 80);
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +31,7 @@ class WidgetTestPage extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Opacity · ClipOval · Card · FittedBox',
+                'Opacity · ClipOval · Card · FittedBox\nRadio · RangeSlider · AspectRatio · RotatedBox · AppBar',
                 style: TextStyle(fontSize: 14, color: Color(0xFF888888)),
               ),
               const SizedBox(height: 32),
@@ -34,6 +42,14 @@ class WidgetTestPage extends StatelessWidget {
               _buildCardSection(),
               const SizedBox(height: 32),
               _buildFittedBoxSection(),
+              const SizedBox(height: 32),
+              _buildRadioSection(),
+              const SizedBox(height: 32),
+              _buildRangeSliderSection(),
+              const SizedBox(height: 32),
+              _buildAspectRatioSection(),
+              const SizedBox(height: 32),
+              _buildRotatedBoxSection(),
               const SizedBox(height: 48),
             ],
           ),
@@ -481,6 +497,297 @@ class WidgetTestPage extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+
+  // ─── 5. Radio ──────────────────────────────────────────
+
+  Widget _buildRadioSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Radio'),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            // ignore: deprecated_member_use
+            Radio<int>(
+              value: 0,
+              groupValue: _radioValue,
+              onChanged: (v) => setState(() => _radioValue = v!),
+            ),
+            const Text('Option A'),
+            const SizedBox(width: 16),
+            // ignore: deprecated_member_use
+            Radio<int>(
+              value: 1,
+              groupValue: _radioValue,
+              onChanged: (v) => setState(() => _radioValue = v!),
+            ),
+            const Text('Option B'),
+            const SizedBox(width: 16),
+            // ignore: deprecated_member_use
+            Radio<int>(
+              value: 2,
+              groupValue: _radioValue,
+              onChanged: (v) => setState(() => _radioValue = v!),
+              activeColor: const Color(0xFFFF6B6B),
+            ),
+            const Text('Option C (custom color)'),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ─── 6. RangeSlider ───────────────────────────────────
+
+  Widget _buildRangeSliderSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('RangeSlider'),
+        const SizedBox(height: 12),
+        RangeSlider(
+          values: _rangeValues,
+          min: 0,
+          max: 100,
+          divisions: 10,
+          labels: RangeLabels(
+            _rangeValues.start.round().toString(),
+            _rangeValues.end.round().toString(),
+          ),
+          onChanged: (v) => setState(() => _rangeValues = v),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Range: ${_rangeValues.start.round()} – ${_rangeValues.end.round()}',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF555555)),
+        ),
+      ],
+    );
+  }
+
+  // ─── 7. AspectRatio ───────────────────────────────────
+
+  Widget _buildAspectRatioSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('AspectRatio'),
+        const SizedBox(height: 12),
+        // 16:9
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF26C6DA),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.center,
+            child: const Text(
+              '16 : 9',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // 1:1 in a constrained width
+        Row(
+          children: [
+            SizedBox(
+              width: 120,
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF7043),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Text(
+                    '1 : 1',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 180,
+              child: AspectRatio(
+                aspectRatio: 3 / 1,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7C4DFF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Text(
+                    '3 : 1',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ─── 8. RotatedBox ────────────────────────────────────
+
+  Widget _buildRotatedBoxSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('RotatedBox'),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            // 0 quarter turns (no rotation)
+            Column(
+              children: [
+                RotatedBox(
+                  quarterTurns: 0,
+                  child: Container(
+                    width: 60,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6C63FF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      '0',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text('0°', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+            // 1 quarter turn (90°)
+            Column(
+              children: [
+                RotatedBox(
+                  quarterTurns: 1,
+                  child: Container(
+                    width: 60,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF6B6B),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      '1',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text('90°', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+            // 2 quarter turns (180°)
+            Column(
+              children: [
+                RotatedBox(
+                  quarterTurns: 2,
+                  child: Container(
+                    width: 60,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00BFA6),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      '2',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text('180°', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+            // 3 quarter turns (270°)
+            Column(
+              children: [
+                RotatedBox(
+                  quarterTurns: 3,
+                  child: Container(
+                    width: 60,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFB74D),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      '3',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text('270°', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // RotatedBox with text
+        Center(
+          child: RotatedBox(
+            quarterTurns: 1,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFC5C7D), Color(0xFF6A82FB)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Rotated Text Label',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
         ),
       ],
     );

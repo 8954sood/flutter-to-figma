@@ -68,6 +68,7 @@ final Map<RenderObject, CustomPainter> _customPainterByRO = {};
 final Map<RenderObject, CustomClipper<Path>> _clipperByRenderObject = {};
 final Map<RenderObject, List<Map<String, double>>> _clipPathPoints = {};
 final Map<RenderObject, String> _boxFitByRenderObject = {};
+final Set<RenderObject> _rotatedBoxNodes = {};
 String? _asyncExportResult;
 bool _asyncExportBusy = false;
 
@@ -305,9 +306,8 @@ Future<void> _preCaptureImages(RenderObject node) async {
     }
   }
 
-  // Checkbox / Switch 등 → 가장 가까운 RepaintBoundary에서 crop 캡처
-  // 실제 컴포넌트보다 사방 2px 넓게 캡처하여 overflow paint(리플/그림자) 포함
-  // 출력 PNG는 항상 (w+4)x(h+4) 크기, 소스 부족 영역은 투명
+  // Checkbox / Switch / RangeSlider 등 → 투명 배경에 직접 paint (우선)
+  // 사방 4px 여유 포함하여 overflow paint(리플/그림자) 캡처
   if (node is RenderBox &&
       _customPaintCaptures.contains(node) &&
       !_imageDataByNode.containsKey(node)) {
@@ -317,7 +317,41 @@ Future<void> _preCaptureImages(RenderObject node) async {
       if (w > 0 && h > 0) {
         final double pr = _capturePixelRatio;
         const double pad = 4.0;
-        // 충분히 큰 RepaintBoundary를 찾음 (노드보다 사방 pad 이상 큰 것)
+        final paintW = w + pad * 2;
+        final paintH = h + pad * 2;
+        final layer = OffsetLayer();
+        final context = PaintingContext(
+          layer,
+          Rect.fromLTWH(0, 0, paintW, paintH),
+        );
+        node.paint(context, Offset(pad, pad));
+        context.stopRecordingIfNeeded();
+        final img = await layer.toImage(
+          Rect.fromLTWH(0, 0, paintW, paintH),
+          pixelRatio: pr,
+        );
+        final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData != null) {
+          _imageDataByNode[node] = base64Encode(byteData.buffer.asUint8List());
+        }
+      }
+    } catch (e) {
+      debugPrint(
+        '[preCapture] direct paint FAILED for ${node.runtimeType}: $e',
+      );
+    }
+  }
+
+  // Fallback: direct paint 실패 시 RepaintBoundary crop
+  if (node is RenderBox &&
+      _customPaintCaptures.contains(node) &&
+      !_imageDataByNode.containsKey(node)) {
+    try {
+      final w = node.size.width;
+      final h = node.size.height;
+      if (w > 0 && h > 0) {
+        final double pr = _capturePixelRatio;
+        const double pad = 4.0;
         RenderObject? ancestor = node.parent;
         RenderRepaintBoundary? bestBoundary;
         while (ancestor != null) {
@@ -337,16 +371,13 @@ Future<void> _preCaptureImages(RenderObject node) async {
           final boundaryOffset = (ancestor as RenderBox).localToGlobal(
             Offset.zero,
           );
-          // 출력 이미지 크기 (항상 고정)
           final outW = ((w + pad * 2) * pr).round();
           final outH = ((h + pad * 2) * pr).round();
-          // 소스 crop 영역 (pixel 좌표)
           final rawSrcX = (nodeOffset.dx - boundaryOffset.dx - pad) * pr;
           final rawSrcY = (nodeOffset.dy - boundaryOffset.dy - pad) * pr;
-          // 클램프: 소스 이미지 밖이면 잘라내고, 대상 오프셋 조정
           final srcX = rawSrcX.clamp(0.0, img.width.toDouble());
           final srcY = rawSrcY.clamp(0.0, img.height.toDouble());
-          final dstX = srcX - rawSrcX; // 소스가 잘린만큼 대상에서 오프셋
+          final dstX = srcX - rawSrcX;
           final dstY = srcY - rawSrcY;
           final srcW = (outW.toDouble() - dstX).clamp(
             0.0,
@@ -362,7 +393,6 @@ Future<void> _preCaptureImages(RenderObject node) async {
               recorder,
               Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
             );
-            // 배경 투명 (기본값)
             canvas.drawImageRect(
               img,
               Rect.fromLTWH(srcX, srcY, srcW, srcH),
@@ -382,7 +412,11 @@ Future<void> _preCaptureImages(RenderObject node) async {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint(
+        '[preCapture] RepaintBoundary crop FAILED for ${node.runtimeType}: $e',
+      );
+    }
   }
 
   // 자식 재귀 (visitChildren은 sync callback → 리스트 수집 후 순회)
@@ -549,7 +583,12 @@ void _collectDesignInfoFromElements(Element element) {
 
   // 전용 위젯 이름 태깅
   final widgetTypeName = widget.runtimeType.toString();
-  const namedWidgets = {'NavigationToolbar', 'BottomNavigationBar', 'Scaffold'};
+  const namedWidgets = {
+    'NavigationToolbar',
+    'BottomNavigationBar',
+    'Scaffold',
+    'AppBar',
+  };
   if (namedWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
     if (ro != null) {
@@ -563,6 +602,8 @@ void _collectDesignInfoFromElements(Element element) {
     'Switch',
     'CupertinoSwitch',
     'Slider',
+    'Radio',
+    'RangeSlider',
     'CircularProgressIndicator',
     'LinearProgressIndicator',
     'ChoiceChip',
@@ -680,6 +721,26 @@ void _collectDesignInfoFromElements(Element element) {
       }
     } catch (e) {
       debugPrint('[Transform] angle extraction failed: $e');
+    }
+  }
+
+  // RotatedBox → quarterTurns 추출 + 노드 등록
+  if (widgetTypeName == 'RotatedBox') {
+    try {
+      final ro = element.renderObject;
+      if (ro != null) {
+        _rotatedBoxNodes.add(ro);
+        final qt = (widget as dynamic).quarterTurns as int;
+        final degrees = (qt % 4) * 90.0;
+        if (degrees.abs() > 0.001) {
+          _rotationByRenderObject[ro] = degrees;
+          debugPrint(
+            '[RotatedBox] captured rotation=${degrees.toStringAsFixed(0)}° for $ro',
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[RotatedBox] quarterTurns extraction failed: $e');
     }
   }
 
@@ -1029,6 +1090,69 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   bool isLayoutNode = false;
   bool isSizedBox = false;
   bool isCustomMultiChild = false;
+
+  // RotatedBox: element tree에서 미리 등록한 노드를 직접 감지 (runtimeType 의존 제거)
+  if (_rotatedBoxNodes.contains(node)) {
+    final rotation = _rotationByRenderObject[node];
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        // rotation 0° → 단순 pass-through
+        if (rotation == null || rotation.abs() <= 0.001) {
+          childResult['rect'] = {
+            'x': offset.dx,
+            'y': offset.dy,
+            'w': node.size.width,
+            'h': node.size.height,
+          };
+          return childResult;
+        }
+        // rotation 있음 → wrapper Frame 생성
+        // Figma에서 rotation은 순수 시각 변환이므로,
+        // 자식은 원래(회전 전) 크기를 유지하고 wrapper가 layout 크기를 담당
+        final childVisual =
+            childResult['visual'] as Map<String, dynamic>? ?? {};
+        childVisual['rotation'] = rotation;
+        childResult['visual'] = childVisual;
+        // 자식은 원래 크기 유지 (singleChild.size), wrapper 내부에 센터링
+        childResult['rect'] = {
+          'x': 0.0,
+          'y': 0.0,
+          'w': singleChild!.size.width,
+          'h': singleChild!.size.height,
+        };
+        final cl = childResult['childLayout'] as Map<String, dynamic>? ?? {};
+        cl['fixedWidth'] = true;
+        cl['fixedHeight'] = true;
+        cl['fixedSize'] = true;
+        childResult['childLayout'] = cl;
+        return {
+          'type': 'Frame',
+          'layoutMode': 'NONE',
+          'clipsContent': false,
+          'rect': {
+            'x': offset.dx,
+            'y': offset.dy,
+            'w': node.size.width,
+            'h': node.size.height,
+          },
+          'visual': <String, dynamic>{},
+          'containerLayout': {
+            'mainAxisAlignment': 'center',
+            'crossAxisAlignment': 'center',
+          },
+          'children': <Map<String, dynamic>>[childResult],
+        };
+      }
+    }
+    // 자식 없으면 빈 Frame으로 fall through
+  }
 
   final String runtimeTypeStr = node.runtimeType.toString();
   final bool isSvgBoxTarget = _svgBoxTargets.contains(node);
@@ -1391,6 +1515,37 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     }
 
     // 자식 없으면 Spacer 역할 (빈 Frame)
+    type = 'Frame';
+    layoutMode = 'NONE';
+  }
+  // ---------------------------------------------------
+  // [4.5] RenderAspectRatio (AspectRatio)
+  // ---------------------------------------------------
+  else if (runtimeTypeStr.contains('RenderAspectRatio')) {
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
+        };
+        final cl = childResult['childLayout'] as Map<String, dynamic>? ?? {};
+        cl['fixedWidth'] = true;
+        cl['fixedHeight'] = true;
+        cl['fixedSize'] = true;
+        childResult['childLayout'] = cl;
+        return childResult;
+      }
+    }
+    // 자식 없으면 빈 Frame
     type = 'Frame';
     layoutMode = 'NONE';
   }
@@ -1876,6 +2031,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       visual['clipPath'] = clipPoints;
     }
   }
+  // [8.65] RenderRotatedBox — element tree 기반 early-return으로 이동 (위쪽 _rotatedBoxNodes 블록)
   // ---------------------------------------------------
   // [8.7] RenderFittedBox
   // ---------------------------------------------------
@@ -2547,6 +2703,7 @@ String figmaExtractorEntryPoint() {
     _customPainterByRO.clear();
     _clipperByRenderObject.clear();
     _boxFitByRenderObject.clear();
+    _rotatedBoxNodes.clear();
     // _shaderMaskGradients, _clipPathPoints는 async phase에서 채워지므로 여기서 clear하지 않음
 
     final rootElement = WidgetsBinding.instance.renderViewElement;
@@ -2647,6 +2804,7 @@ Future<String> _figmaExportWithImagesAsync() async {
   _clipperByRenderObject.clear();
   _clipPathPoints.clear();
   _boxFitByRenderObject.clear();
+  _rotatedBoxNodes.clear();
 
   // Phase 0: Element tree 순회 → _customPaintCaptures 등록 (pre-capture에 필요)
   final rootElement = WidgetsBinding.instance.renderViewElement;
