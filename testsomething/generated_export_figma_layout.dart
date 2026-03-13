@@ -461,6 +461,7 @@ void _collectDesignInfoFromElements(Element element) {
     Color? borderColor;
     double? borderWidth;
     dynamic radius;
+    double? borderTopW, borderRightW, borderBottomW, borderLeftW;
 
     if (deco.filled == true) {
       bg = deco.fillColor;
@@ -477,6 +478,19 @@ void _collectDesignInfoFromElements(Element element) {
       if (br is BorderRadius) {
         radius = _extractBorderRadius(br);
       }
+    } else if (border is UnderlineInputBorder) {
+      final side = border.borderSide;
+      borderColor = side.color;
+      borderWidth = side.width;
+      // 하단 border만 적용
+      borderTopW = 0;
+      borderRightW = 0;
+      borderBottomW = side.width;
+      borderLeftW = 0;
+      final br = border.borderRadius;
+      if (br is BorderRadius) {
+        radius = _extractBorderRadius(br);
+      }
     }
 
     final ro = element.renderObject;
@@ -486,6 +500,10 @@ void _collectDesignInfoFromElements(Element element) {
         borderColor: borderColor,
         borderWidth: borderWidth,
         borderRadius: radius,
+        borderTopWidth: borderTopW,
+        borderRightWidth: borderRightW,
+        borderBottomWidth: borderBottomW,
+        borderLeftWidth: borderLeftW,
         isTextField: true,
       );
     }
@@ -609,11 +627,22 @@ void _collectDesignInfoFromElements(Element element) {
     'BottomNavigationBar',
     'Scaffold',
     'AppBar',
+    'ListTile',
+    'CheckboxListTile',
+    'RadioListTile',
   };
   if (namedWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
     if (ro != null) {
       _widgetNameByRenderObject[ro] = widgetTypeName;
+    }
+  }
+
+  // Chip 계열: ComponentElement → renderObject는 하위 첫 RenderObject 반환
+  if (widgetTypeName == 'Chip' || widgetTypeName == 'RawChip') {
+    final ro = element.renderObject;
+    if (ro != null && !_widgetNameByRenderObject.containsKey(ro)) {
+      _widgetNameByRenderObject[ro] = 'Chip';
     }
   }
 
@@ -1603,6 +1632,12 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         .toString()
         .split('.')
         .last;
+    // Wrap은 constraints.maxWidth로 줄바꿈 → Figma에서도 이 너비가 필요
+    // node.size.width는 자식 바운딩 박스만 반영하므로 constraints.maxWidth 사용
+    final maxW = node.constraints.maxWidth;
+    if (maxW.isFinite && maxW > node.size.width) {
+      containerLayout['_wrapMaxWidth'] = maxW;
+    }
   }
   // ---------------------------------------------------
   // [6] DecoratedBox
@@ -2559,6 +2594,12 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       layoutMode == 'NONE' &&
       !hasPadding &&
       children.length == 1) {
+    // widgetName 전파 (Smart Flattening에서 소실 방지)
+    if (_widgetNameByRenderObject.containsKey(node) &&
+        children.first is Map<String, dynamic> &&
+        !children.first.containsKey('widgetName')) {
+      children.first['widgetName'] = _widgetNameByRenderObject[node];
+    }
     return children.first;
   }
   if (children.isEmpty &&
