@@ -35,6 +35,8 @@ class DesignInfo {
   final double? borderBottomWidth;
   final double? borderLeftWidth;
   final bool clipsContent;
+  final bool isOutlinedTextField;
+  final String? parentBgColor; // outlined floating label 배경색
 
   DesignInfo({
     this.backgroundColor,
@@ -49,6 +51,8 @@ class DesignInfo {
     this.borderBottomWidth,
     this.borderLeftWidth,
     this.clipsContent = false,
+    this.isOutlinedTextField = false,
+    this.parentBgColor,
   });
 }
 
@@ -204,4 +208,3 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
     }
   }
 }
-

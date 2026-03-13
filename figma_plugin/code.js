@@ -148,6 +148,7 @@ function base64ToUint8Array(base64) {
 
   return bytes;
 }
+
 // ============================
 // Flutter Layout → Figma (Flat properties schema + Auto-Layout)
 // 3-Phase Pipeline: Preprocess → Font Load → Render
@@ -157,6 +158,7 @@ figma.showUI(__html__, { width: 360, height: 380 });
 
 var loadedFonts = {}; // "family::style" → true
 var resolvedFonts = {}; // "family::originalStyle" → actual loaded style
+
 
 // ============================================================
 // Phase 0: Schema v2 → flat properties 변환
@@ -314,6 +316,7 @@ function normalizeSchemaV2(node) {
   delete node.childLayout;
   if (node.layoutMode) delete node.layoutMode;
 }
+
 // ============================================================
 // Phase 1: 전처리 (순수 JS, Figma API 호출 없음)
 // ============================================================
@@ -568,6 +571,7 @@ function mergePropsInto(target, source, isOutermost) {
     }
   }
 }
+
 // --- 1.1.5 preprocessNamedWidgets ---
 function preprocessNamedWidgets(node) {
   if (!node || typeof node !== "object") return;
@@ -943,6 +947,7 @@ function handleBottomNavigationBar(node) {
     children[i].properties = cp;
   }
 }
+
 // --- 1.3 inferMissingLayout ---
 function sortChildrenByAxis(children, axis) {
   // axis: "y" or "x"
@@ -1018,6 +1023,7 @@ function inferMissingLayout(node) {
     node.properties = props;
   }
 }
+
 // --- 1.4 convertSpacersToItemSpacing ---
 function isSpacer(child, parentLayoutMode) {
   if (!child || child.type !== "Frame") return false;
@@ -1223,6 +1229,7 @@ function recalcItemSpacing(node) {
   props.itemSpacing = mostCommonValue(gaps);
   node.properties = props;
 }
+
 // --- 1.6 assignSizingHints ---
 function assignSizingHints(node, parentProps) {
   if (!node || typeof node !== "object") return;
@@ -1336,6 +1343,7 @@ function assignSizingHints(node, parentProps) {
     }
   }
 }
+
 // ============================================================
 // Phase 1 헬퍼
 // ============================================================
@@ -1370,6 +1378,7 @@ function parseBorderRadius(val) {
   var v = parseFloat(s);
   return isNaN(v) ? 0 : v;
 }
+
 // ============================================================
 // Phase 2: 폰트 로딩
 // ============================================================
@@ -1470,6 +1479,7 @@ async function preloadFonts(rootNode) {
   }
   await Promise.all(promises);
 }
+
 // ============================================================
 // Phase 3: 렌더링
 // ============================================================
@@ -1835,6 +1845,7 @@ function renderNode(node, parentFigma, parentLayoutDir) {
     } catch (e) {}
   }
 }
+
 // ----------------------------
 // applyVisualProps: 배경색, 테두리, 둥근 모서리, 그림자
 // ----------------------------
@@ -2036,6 +2047,7 @@ function buildSweepGradientTransform(cx, cy) {
     [0, 1, 0.5 - cy]
   ];
 }
+
 // ----------------------------
 // applyAutoLayout: layoutMode, spacing, padding, alignment
 // ----------------------------
@@ -2157,6 +2169,7 @@ function applySizing(figNode, jsonNode, parentLayoutDir) {
     } catch (e2) {}
   }
 }
+
 // ----------------------------
 // Text 속성 적용 (flat properties에서 읽기)
 // ----------------------------
@@ -2311,6 +2324,7 @@ function applyImageProps(rectNode, props) {
     }];
   }
 }
+
 
 // ----------------------------
 // UI 메시지 핸들러

@@ -219,4 +219,3 @@ Future<void> _preCaptureImages(RenderObject node) async {
     await _preCaptureImages(child);
   }
 }
-

@@ -401,6 +401,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   else if (node is RenderEditable) {
     type = 'Text';
     hasVisual = true;
+    visual['isEditable'] = true;
     try {
       final text = node.text;
       final plainText = text?.toPlainText() ?? '';
@@ -931,11 +932,11 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     } catch (_) {}
   }
   // ---------------------------------------------------
-  // [8.3] RenderOpacity
+  // [8.3] RenderOpacity / RenderAnimatedOpacity
   // ---------------------------------------------------
   else if (node is RenderOpacity) {
-    // Opacity 값을 자식에 전파
     final double opacityValue = node.opacity;
+    if (opacityValue < 0.01) return null; // 투명 → 스킵
     RenderBox? singleChild;
     int childCount = 0;
     node.visitChildren((child) {
@@ -961,6 +962,39 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     type = 'Frame';
     layoutMode = 'NONE';
     visual['opacity'] = opacityValue;
+  } else if (node.runtimeType.toString().contains('AnimatedOpacity')) {
+    // RenderAnimatedOpacity (hint text 등 애니메이션 opacity)
+    try {
+      final double opacityValue = (node as dynamic).opacity.value as double;
+      if (opacityValue < 0.01) return null; // 투명 → 스킵
+      RenderBox? singleChild;
+      int childCount = 0;
+      node.visitChildren((child) {
+        childCount++;
+        if (child is RenderBox) singleChild = child;
+      });
+      if (childCount == 1 && singleChild != null) {
+        final childResult = _crawl(singleChild);
+        if (childResult != null) {
+          final childVisual =
+              childResult['visual'] as Map<String, dynamic>? ?? {};
+          childVisual['opacity'] = opacityValue;
+          childResult['visual'] = childVisual;
+          childResult['rect'] = {
+            'x': offset.dx,
+            'y': offset.dy,
+            'w': node.size.width,
+            'h': node.size.height,
+          };
+          return childResult;
+        }
+      }
+      type = 'Frame';
+      layoutMode = 'NONE';
+      visual['opacity'] = opacityValue;
+    } catch (_) {
+      // fallback: 일반 노드로 처리
+    }
   }
   // ---------------------------------------------------
   // [8.5] RenderClipRRect
@@ -1492,27 +1526,39 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   // [10.5] TextField 구조 재편: bg를 입력 영역에만, 패딩 적용
   // ---------------------------------------------------
   if (isTextFieldNode && children.isNotEmpty) {
-    // hint/text 중복 제거:
-    // RenderEditable(실텍스트)이 먼저, RenderParagraph(hint)가 뒤에 옴.
-    // 실텍스트가 비어있지 않으면 hint(두 번째) 제거.
-    // 실텍스트가 비어있으면 실텍스트 제거하고 hint만 남김.
+    // hint/editable 중복 제거 (label은 보존):
+    // RenderEditable → visual.isEditable == true
+    // RenderParagraph → label 또는 hint (isEditable 없음)
     final textKids = children.where((c) => c['type'] == 'Text').toList();
-    if (textKids.length >= 2) {
-      final first = textKids.first; // 실텍스트 (RenderEditable)
-      final second = textKids.last; // hint (RenderParagraph)
-      final firstContent =
-          ((first['visual'] as Map?)?['content'] as String?) ?? '';
-      if (firstContent.isNotEmpty) {
-        // 실텍스트 있음 → hint 제거
-        children.remove(second);
+    Map<String, dynamic>? editableNode;
+    final List<Map<String, dynamic>> paragraphNodes = [];
+    for (final tk in textKids) {
+      final v = tk['visual'] as Map<String, dynamic>? ?? {};
+      if (v['isEditable'] == true) {
+        editableNode = tk;
       } else {
-        // 실텍스트 비어있음 → 실텍스트 제거, hint만 남김
-        children.remove(first);
+        paragraphNodes.add(tk);
       }
-    } else if (textKids.length == 1) {
-      final v = textKids.first['visual'] as Map<String, dynamic>? ?? {};
-      if (((v['content'] as String?) ?? '').isEmpty) {
-        children.remove(textKids.first);
+    }
+
+    if (editableNode != null) {
+      final editContent =
+          ((editableNode['visual'] as Map?)?['content'] as String?) ?? '';
+      if (editContent.isNotEmpty) {
+        // 실텍스트 있음 → hint 제거 (label 제외: hint는 editable과 비슷한 y좌표)
+        final editY =
+            ((editableNode['rect'] as Map?)?['y'] as num?)?.toDouble() ?? 0;
+        for (final p in paragraphNodes) {
+          final pY = ((p['rect'] as Map?)?['y'] as num?)?.toDouble() ?? 0;
+          final pContent = ((p['visual'] as Map?)?['content'] as String?) ?? '';
+          // hint: editable과 y좌표가 비슷하고 (±8px), 내용이 있는 텍스트
+          if ((pY - editY).abs() < 8 && pContent.isNotEmpty) {
+            children.remove(p);
+          }
+        }
+      } else {
+        // 실텍스트 비어있음 → editable 노드 제거
+        children.remove(editableNode);
       }
     }
 
@@ -1543,12 +1589,21 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       // 자식을 입력 영역 안 vs 아래(에러/헬퍼)로 분리
       final List<Map<String, dynamic>> inputChildren = [];
       final List<Map<String, dynamic>> belowChildren = [];
+      Map<String, dynamic>? floatingLabel; // border 경계에 걸치는 label
+      final decoX = (decoRect['x'] as num).toDouble();
       for (int i = 0; i < children.length; i++) {
         if (i == decoIdx) continue;
         final c = children[i];
         final cy = ((c['rect'] as Map?)?['y'] as num?)?.toDouble() ?? 0;
+        final ch = ((c['rect'] as Map?)?['h'] as num?)?.toDouble() ?? 0;
         if (cy >= decoBottom - 1) {
           belowChildren.add(c);
+        } else if (c['type'] == 'Text' &&
+            (c['visual'] as Map?)?['isEditable'] != true &&
+            cy < decoY &&
+            (cy + ch) > decoY) {
+          // label이 deco box 상단 경계를 걸쳐 있음 (floating label)
+          floatingLabel = c;
         } else {
           inputChildren.add(c);
         }
@@ -1563,7 +1618,7 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           final icY = (icRect['y'] as num?)?.toDouble() ?? 0;
           final icW = (icRect['w'] as num?)?.toDouble() ?? 0;
           final icH = (icRect['h'] as num?)?.toDouble() ?? 0;
-          final padLeft = icX - (decoRect['x'] as num).toDouble();
+          final padLeft = icX - decoX;
           final padTop = icY - decoY;
           final padRight = decoW - padLeft - icW;
           final padBottom = decoH - padTop - icH;
@@ -1579,23 +1634,62 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         }
       }
 
-      if (belowChildren.isNotEmpty) {
-        // 에러/헬퍼 텍스트 있음 → 구조 재편
-        // bg/border를 decoBox로 이동
-        decoBox['visual'] = Map<String, dynamic>.from(visual);
-        decoBox['children'] = inputChildren;
-        decoBox['layoutMode'] = 'COLUMN';
-        decoBox['containerLayout'] = <String, dynamic>{
-          'mainAxisAlignment': 'center',
-          'crossAxisAlignment': 'start',
-          'mainAxisSize': 'min',
-        };
-        if (paddingMap != null) {
-          (decoBox['containerLayout'] as Map<String, dynamic>)['padding'] =
-              paddingMap;
+      // decoBox에 visual + inputChildren 적용
+      decoBox['visual'] = Map<String, dynamic>.from(visual);
+      decoBox['children'] = inputChildren;
+      decoBox['layoutMode'] = 'COLUMN';
+      decoBox['containerLayout'] = <String, dynamic>{
+        'mainAxisAlignment': 'center',
+        'crossAxisAlignment': 'start',
+        'mainAxisSize': 'min',
+      };
+      if (paddingMap != null) {
+        (decoBox['containerLayout'] as Map<String, dynamic>)['padding'] =
+            paddingMap;
+      }
+
+      // floating label 있으면 → STACK으로 감싸서 border 위에 겹침
+      Map<String, dynamic> mainBox;
+      if (floatingLabel != null) {
+        // outlined + floating label → 배경색 Frame으로 감싸서 notch 효과
+        if (designInfo?.isOutlinedTextField == true &&
+            designInfo?.parentBgColor != null) {
+          final labelRect =
+              floatingLabel['rect'] as Map<String, dynamic>? ?? {};
+          floatingLabel = <String, dynamic>{
+            'type': 'Frame',
+            'layoutMode': 'ROW',
+            'rect': labelRect,
+            'containerLayout': <String, dynamic>{
+              'mainAxisAlignment': 'start',
+              'crossAxisAlignment': 'center',
+              'mainAxisSize': 'min',
+              'padding': {'top': 0.0, 'right': 4.0, 'bottom': 0.0, 'left': 4.0},
+            },
+            'visual': <String, dynamic>{
+              'backgroundColor': designInfo!.parentBgColor,
+            },
+            'children': [floatingLabel],
+          };
         }
 
-        // 외부 → 투명 COLUMN
+        // decoBox: Stack 자식이므로 글로벌 좌표 유지
+        decoBox['rect'] = {'x': decoX, 'y': decoY, 'w': decoW, 'h': decoH};
+        // label: 글로벌 좌표 유지 (STACK이 부모 rect 기준으로 상대 변환)
+        mainBox = <String, dynamic>{
+          'type': 'Frame',
+          'layoutMode': 'STACK',
+          'rect': {'x': decoX, 'y': decoY, 'w': decoW, 'h': decoH},
+          'visual': <String, dynamic>{},
+          'containerLayout': <String, dynamic>{},
+          'children': [decoBox, floatingLabel],
+        };
+      } else {
+        mainBox = decoBox;
+      }
+
+      if (belowChildren.isNotEmpty) {
+        // 에러/헬퍼 텍스트 있음 → 외부 COLUMN
         visual.clear();
         hasVisual = false;
         layoutMode = 'COLUMN';
@@ -1606,19 +1700,20 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         containerLayout['itemSpacing'] = 4.0;
 
         children.clear();
-        children.add(decoBox);
+        children.add(mainBox);
         children.addAll(belowChildren);
       } else {
-        // 에러 없음 → 현재 노드에 패딩 + 레이아웃 적용
+        // 에러 없음 → mainBox를 직접 사용
+        visual.clear();
+        hasVisual = false;
         layoutMode = 'COLUMN';
         isLayoutNode = true;
-        containerLayout['mainAxisAlignment'] = 'center';
-        containerLayout['crossAxisAlignment'] = 'start';
+        containerLayout['mainAxisAlignment'] = 'start';
+        containerLayout['crossAxisAlignment'] = 'stretch';
         containerLayout['mainAxisSize'] = 'min';
-        if (paddingMap != null) {
-          containerLayout['padding'] = paddingMap;
-        }
-        children.removeAt(decoIdx);
+
+        children.clear();
+        children.add(mainBox);
       }
     }
   }
@@ -1782,4 +1877,3 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
   // childLayout은 부모가 설정 (위에서 이미 설정됨)
   return result;
 }
-

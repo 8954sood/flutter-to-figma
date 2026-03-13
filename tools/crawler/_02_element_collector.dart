@@ -17,25 +17,45 @@ void _collectDesignInfoFromElements(Element element) {
       bg = deco.fillColor;
     }
 
-    final InputBorder? border =
-        deco.enabledBorder ?? deco.focusedBorder ?? deco.border;
+    // 포커스 상태에 따라 적절한 border 선택
+    final bool isFocused = widget.isFocused;
+    InputBorder? border;
+    if (isFocused) {
+      border = deco.focusedBorder ?? deco.border;
+    } else {
+      border = deco.enabledBorder ?? deco.border;
+    }
 
+    // Flutter 테마에서 resolved border color 추출 시도
+    Color? themePrimaryColor;
+    if (border != null &&
+        border.borderSide == const BorderSide() &&
+        isFocused) {
+      // border가 기본 BorderSide → 테마 primary color 사용
+      try {
+        final themeData = Theme.of(element);
+        themePrimaryColor = themeData.colorScheme.primary;
+      } catch (_) {}
+    }
+
+    bool isOutlined = false;
     if (border is OutlineInputBorder) {
+      isOutlined = true;
       final side = border.borderSide;
-      borderColor = side.color;
-      borderWidth = side.width;
+      borderColor = themePrimaryColor ?? side.color;
+      borderWidth = isFocused ? math.max(side.width, 2.0) : side.width;
       final br = border.borderRadius;
       if (br is BorderRadius) {
         radius = _extractBorderRadius(br);
       }
     } else if (border is UnderlineInputBorder) {
       final side = border.borderSide;
-      borderColor = side.color;
-      borderWidth = side.width;
+      borderColor = themePrimaryColor ?? side.color;
+      borderWidth = isFocused ? math.max(side.width, 2.0) : side.width;
       // 하단 border만 적용
       borderTopW = 0;
       borderRightW = 0;
-      borderBottomW = side.width;
+      borderBottomW = borderWidth;
       borderLeftW = 0;
       final br = border.borderRadius;
       if (br is BorderRadius) {
@@ -43,8 +63,41 @@ void _collectDesignInfoFromElements(Element element) {
       }
     }
 
+    // outlined + labelText → 부모 배경색 탐색 (floating label notch용)
+    String? parentBgColor;
+    if (isOutlined && deco.labelText != null) {
+      Element? ancestor = element;
+      for (int depth = 0; depth < 20 && ancestor != null; depth++) {
+        Element? parent;
+        ancestor.visitAncestorElements((el) {
+          parent = el;
+          return false;
+        });
+        ancestor = parent;
+        if (ancestor == null) break;
+        final w = ancestor.widget;
+        if (w is Scaffold && w.backgroundColor != null) {
+          parentBgColor = _colorToHex(w.backgroundColor);
+          break;
+        }
+        if (w is Container && w.color != null) {
+          parentBgColor = _colorToHex(w.color);
+          break;
+        }
+        if (w is ColoredBox) {
+          parentBgColor = _colorToHex(w.color);
+          break;
+        }
+        if (w is Material && w.color != null) {
+          parentBgColor = _colorToHex(w.color);
+          break;
+        }
+      }
+      parentBgColor ??= '#ffffffff';
+    }
+
     final ro = element.renderObject;
-    if (ro != null && (bg != null || borderColor != null || radius != null)) {
+    if (ro != null) {
       _designInfoByRenderObject[ro] = DesignInfo(
         backgroundColor: bg,
         borderColor: borderColor,
@@ -55,6 +108,8 @@ void _collectDesignInfoFromElements(Element element) {
         borderBottomWidth: borderBottomW,
         borderLeftWidth: borderLeftW,
         isTextField: true,
+        isOutlinedTextField: isOutlined,
+        parentBgColor: parentBgColor,
       );
     }
   }
@@ -346,4 +401,3 @@ void _collectDesignInfoFromElements(Element element) {
 
   element.visitChildren(_collectDesignInfoFromElements);
 }
-

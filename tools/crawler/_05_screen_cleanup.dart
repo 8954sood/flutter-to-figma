@@ -44,4 +44,3 @@ bool _containsScaffold(Map<String, dynamic> node) {
   }
   return false;
 }
-

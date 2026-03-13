@@ -100,4 +100,3 @@ List<ScrollPosition> _collectScrollPositions(Element? rootElement) {
   rootElement.visitChildren(visit);
   return positions;
 }
-

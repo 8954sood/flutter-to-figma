@@ -116,4 +116,3 @@ bool _hasVisualProps(Map<String, dynamic> visual) {
       visual['isDivider'] == true ||
       visual['backgroundBlur'] != null;
 }
-

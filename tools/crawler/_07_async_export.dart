@@ -116,4 +116,3 @@ String? figmaGetExportResult() {
   if (_asyncExportBusy) return null;
   return _asyncExportResult;
 }
-
