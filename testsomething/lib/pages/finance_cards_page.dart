@@ -33,10 +33,7 @@ class FinanceCardsPage extends StatelessWidget {
           gradient: RadialGradient(
             center: Alignment(-0.3, -0.5),
             radius: 1.5,
-            colors: [
-              Color(0xFF7B2FFF),
-              Color(0xFF1A1A4E),
-            ],
+            colors: [Color(0xFF7B2FFF), Color(0xFF1A1A4E)],
           ),
         ),
         child: SafeArea(
@@ -62,7 +59,10 @@ class FinanceCardsPage extends StatelessWidget {
                         color: Colors.white.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.notifications_none, color: Colors.white),
+                      child: const Icon(
+                        Icons.notifications_none,
+                        color: Colors.white,
+                      ),
                     ),
                   ],
                 ),
@@ -318,11 +318,35 @@ class FinanceCardsPage extends StatelessWidget {
 
   Widget _buildTransactionList() {
     final transactions = [
-      ('Apple Store', 'Today, 14:32', '-\$999.00', Icons.apple, const Color(0xFFFF6B6B)),
-      ('Salary Deposit', 'Yesterday', '+\$5,400.00', Icons.account_balance, const Color(0xFF4CAF50)),
+      (
+        'Apple Store',
+        'Today, 14:32',
+        '-\$999.00',
+        Icons.apple,
+        const Color(0xFFFF6B6B),
+      ),
+      (
+        'Salary Deposit',
+        'Yesterday',
+        '+\$5,400.00',
+        Icons.account_balance,
+        const Color(0xFF4CAF50),
+      ),
       ('Netflix', 'Mar 5', '-\$15.99', Icons.movie, const Color(0xFFE50914)),
-      ('Transfer to Jane', 'Mar 4', '-\$250.00', Icons.send, const Color(0xFF2575FC)),
-      ('Freelance Payment', 'Mar 3', '+\$1,200.00', Icons.work, const Color(0xFF4CAF50)),
+      (
+        'Transfer to Jane',
+        'Mar 4',
+        '-\$250.00',
+        Icons.send,
+        const Color(0xFF2575FC),
+      ),
+      (
+        'Freelance Payment',
+        'Mar 3',
+        '+\$1,200.00',
+        Icons.work,
+        const Color(0xFF4CAF50),
+      ),
     ];
 
     return Padding(
@@ -339,59 +363,63 @@ class FinanceCardsPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          ...transactions.map((t) => Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: t.$5.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
+          ...transactions.map(
+            (t) => Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: t.$5.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(t.$4, color: t.$5, size: 22),
                   ),
-                  child: Icon(t.$4, color: t.$5, size: 22),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        t.$1,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          t.$1,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        t.$2,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
-                          fontSize: 12,
+                        const SizedBox(height: 2),
+                        Text(
+                          t.$2,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            fontSize: 12,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Text(
-                  t.$3,
-                  style: TextStyle(
-                    color: t.$3.startsWith('+') ? const Color(0xFF4CAF50) : Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                  Text(
+                    t.$3,
+                    style: TextStyle(
+                      color: t.$3.startsWith('+')
+                          ? const Color(0xFF4CAF50)
+                          : Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          )),
+          ),
         ],
       ),
     );
@@ -404,12 +432,16 @@ class _WaveClipper extends CustomClipper<Path> {
     final path = Path();
     path.lineTo(0, size.height - 40);
     path.quadraticBezierTo(
-      size.width * 0.25, size.height,
-      size.width * 0.5, size.height - 30,
+      size.width * 0.25,
+      size.height,
+      size.width * 0.5,
+      size.height - 30,
     );
     path.quadraticBezierTo(
-      size.width * 0.75, size.height - 60,
-      size.width, size.height - 20,
+      size.width * 0.75,
+      size.height - 60,
+      size.width,
+      size.height - 20,
     );
     path.lineTo(size.width, 0);
     path.close();

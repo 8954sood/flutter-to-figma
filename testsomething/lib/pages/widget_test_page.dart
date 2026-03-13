@@ -17,8 +17,9 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
   bool _checkboxValue = true;
   bool _switchValue = false;
   double _sliderValue = 0.5;
-  final TextEditingController _textController =
-      TextEditingController(text: 'Hello');
+  final TextEditingController _textController = TextEditingController(
+    text: 'Hello',
+  );
 
   @override
   void dispose() {
@@ -298,7 +299,10 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
             alignment: Alignment.center,
             child: const Text(
               'Ellipse (200×80)',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ),
@@ -343,7 +347,10 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                       SizedBox(height: 4),
                       Text(
                         'Default elevation and shape',
-                        style: TextStyle(color: Color(0xFF888888), fontSize: 13),
+                        style: TextStyle(
+                          color: Color(0xFF888888),
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
@@ -513,10 +520,7 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                 fit: BoxFit.contain,
                 child: Padding(
                   padding: EdgeInsets.all(4),
-                  child: Icon(
-                    Icons.rocket_launch,
-                    color: Color(0xFF7C4DFF),
-                  ),
+                  child: Icon(Icons.rocket_launch, color: Color(0xFF7C4DFF)),
                 ),
               ),
             ),
@@ -532,10 +536,7 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                 fit: BoxFit.fitHeight,
                 child: Padding(
                   padding: EdgeInsets.all(4),
-                  child: Icon(
-                    Icons.sailing,
-                    color: Color(0xFF1565C0),
-                  ),
+                  child: Icon(Icons.sailing, color: Color(0xFF1565C0)),
                 ),
               ),
             ),
@@ -862,9 +863,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                 ),
               ),
               alignment: Alignment.center,
-              child: const Text('Linear',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Linear',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             const SizedBox(width: 12),
             Container(
@@ -877,9 +882,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                 ),
               ),
               alignment: Alignment.center,
-              child: const Text('Radial',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Radial',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             const SizedBox(width: 12),
             Container(
@@ -897,9 +906,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                 ),
               ),
               alignment: Alignment.center,
-              child: const Text('Sweep',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Sweep',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),
@@ -924,9 +937,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                 height: 100,
                 color: const Color(0xFF6C63FF),
                 alignment: Alignment.center,
-                child: const Text('r: 20',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'r: 20',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -941,9 +958,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                   ),
                 ),
                 alignment: Alignment.center,
-                child: const Text('r: 40',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'r: 40',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -954,9 +975,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                 height: 100,
                 color: const Color(0xFF00BFA6),
                 alignment: Alignment.center,
-                child: const Text('r: 50',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'r: 50',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ],
@@ -986,9 +1011,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 alignment: Alignment.center,
-                child: const Text('π/6',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'π/6',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
             Transform.rotate(
@@ -1001,9 +1030,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 alignment: Alignment.center,
-                child: const Text('-π/4',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  '-π/4',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
             Transform.rotate(
@@ -1016,9 +1049,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 alignment: Alignment.center,
-                child: const Text('π/2',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'π/2',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ],
@@ -1050,9 +1087,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   alignment: Alignment.center,
-                  child: const Text('Back',
-                      style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Back',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
               Positioned(
@@ -1066,9 +1107,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   alignment: Alignment.center,
-                  child: const Text('Middle',
-                      style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Middle',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
               Positioned(
@@ -1082,9 +1127,13 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   alignment: Alignment.center,
-                  child: const Text('Front',
-                      style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Front',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -1113,12 +1162,15 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 alignment: Alignment.center,
-                child: const Text('Expanded\nflex: 2',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12)),
+                child: const Text(
+                  'Expanded\nflex: 2',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -1131,12 +1183,15 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 alignment: Alignment.center,
-                child: const Text('Flexible\nflex: 1',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12)),
+                child: const Text(
+                  'Flexible\nflex: 1',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -1148,12 +1203,15 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                 borderRadius: BorderRadius.circular(8),
               ),
               alignment: Alignment.center,
-              child: const Text('Fixed\n60',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12)),
+              child: const Text(
+                'Fixed\n60',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
             ),
           ],
         ),
@@ -1273,9 +1331,10 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                 child: const Text(
                   'Background Gradient',
                   style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold),
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
               Positioned(
@@ -1293,7 +1352,9 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                       child: const Text(
                         'Blurred',
                         style: TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.bold),
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -1326,9 +1387,7 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
           decoration: InputDecoration(
             labelText: 'Outlined',
             hintText: 'Type here...',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
       ],
@@ -1426,14 +1485,8 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
               selected: true,
               onSelected: (_) {},
             ),
-            InputChip(
-              label: const Text('Input'),
-              onDeleted: () {},
-            ),
-            ActionChip(
-              label: const Text('Action'),
-              onPressed: () {},
-            ),
+            InputChip(label: const Text('Input'), onDeleted: () {}),
+            ActionChip(label: const Text('Action'), onPressed: () {}),
           ],
         ),
       ],
@@ -1497,7 +1550,10 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                 ),
               ),
               const VerticalDivider(
-                  thickness: 2, color: Color(0xFFFF6B6B), width: 20),
+                thickness: 2,
+                color: Color(0xFFFF6B6B),
+                width: 20,
+              ),
               Expanded(
                 child: Container(
                   color: const Color(0xFFFFF3E0),
@@ -1548,13 +1604,11 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
               child: Container(
                 height: 60,
                 decoration: BoxDecoration(
-                  border: Border.all(
-                      color: const Color(0xFF6C63FF), width: 2),
+                  border: Border.all(color: const Color(0xFF6C63FF), width: 2),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 alignment: Alignment.center,
-                child: const Text('All sides',
-                    style: TextStyle(fontSize: 12)),
+                child: const Text('All sides', style: TextStyle(fontSize: 12)),
               ),
             ),
             const SizedBox(width: 8),
@@ -1568,8 +1622,10 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                   ),
                 ),
                 alignment: Alignment.center,
-                child: const Text('Top & Bottom',
-                    style: TextStyle(fontSize: 12)),
+                child: const Text(
+                  'Top & Bottom',
+                  style: TextStyle(fontSize: 12),
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -1582,8 +1638,7 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
                   ),
                 ),
                 alignment: Alignment.center,
-                child: const Text('Left only',
-                    style: TextStyle(fontSize: 12)),
+                child: const Text('Left only', style: TextStyle(fontSize: 12)),
               ),
             ),
           ],

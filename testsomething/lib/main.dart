@@ -66,18 +66,12 @@ class _MainShellState extends State<MainShell> {
         selectedItemColor: Colors.deepPurple,
         unselectedItemColor: Colors.grey,
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
           BottomNavigationBarItem(
             icon: Icon(Icons.credit_card),
             label: 'Finance',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.cloud),
-            label: 'Weather',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.cloud), label: 'Weather'),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
             label: 'Settings',

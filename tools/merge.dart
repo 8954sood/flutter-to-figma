@@ -1,7 +1,10 @@
 #!/usr/bin/env dart
 // tools/merge.dart
 //
-// crawler_source.dart + export_figma_layout.dart → generated_export_figma_layout.dart
+// Step A: tools/crawler/_*.dart → tools/crawler_source.dart
+// Step B: figma_plugin/src/_*.js → figma_plugin/code.js
+// Step C: crawler_source.dart + export_figma_layout.dart → generated_export_figma_layout.dart
+//
 // 순수 Dart CLI (외부 패키지 없음)
 //
 // 사용법:
@@ -9,11 +12,66 @@
 
 import 'dart:io';
 
+/// 디렉토리 내 _* 패턴 파일을 이름순 정렬 후 결합
+String _mergeFragments(String dirPath, String glob) {
+  final dir = Directory(dirPath);
+  if (!dir.existsSync()) {
+    stderr.writeln('ERROR: $dirPath 디렉토리를 찾을 수 없습니다.');
+    exit(1);
+  }
+
+  final files =
+      dir
+          .listSync()
+          .whereType<File>()
+          .where(
+            (f) =>
+                f.uri.pathSegments.last.startsWith('_') &&
+                f.uri.pathSegments.last.endsWith(glob),
+          )
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+
+  if (files.isEmpty) {
+    stderr.writeln('ERROR: $dirPath 에 $glob 파일이 없습니다.');
+    exit(1);
+  }
+
+  final buffer = StringBuffer();
+  for (var i = 0; i < files.length; i++) {
+    final content = files[i].readAsStringSync();
+    buffer.write(content);
+    // 파일이 개행으로 끝나지 않으면 개행 추가
+    if (content.isNotEmpty && !content.endsWith('\n')) {
+      buffer.writeln();
+    }
+  }
+  // 파일 끝 trailing whitespace 정리 (dart format 호환)
+  return buffer.toString().trimRight() + '\n';
+}
+
 void main() {
   // 이 스크립트가 위치한 디렉토리 기준으로 경로 결정
   final scriptDir = File(Platform.script.toFilePath()).parent.path;
 
-  final crawlerPath = '$scriptDir/crawler_source.dart';
+  // ── Step A: Dart 모듈 결합 → crawler_source.dart ──
+  final crawlerDir = '$scriptDir/crawler';
+  final crawlerOutputPath = '$scriptDir/crawler_source.dart';
+
+  final dartSource = _mergeFragments(crawlerDir, '.dart');
+  File(crawlerOutputPath).writeAsStringSync(dartSource);
+  print('Step A: Generated $crawlerOutputPath');
+
+  // ── Step B: JS 모듈 결합 → code.js ──
+  final jsDir = '$scriptDir/../figma_plugin/src';
+  final jsOutputPath = '$scriptDir/../figma_plugin/code.js';
+
+  final jsSource = _mergeFragments(jsDir, '.js');
+  File(jsOutputPath).writeAsStringSync(jsSource);
+  print('Step B: Generated $jsOutputPath');
+
+  // ── Step C: crawler_source.dart → generated_export_figma_layout.dart ──
+  final crawlerPath = crawlerOutputPath;
   final skeletonPath = '$scriptDir/export_figma_layout.dart';
   final outputPath = '$scriptDir/generated_export_figma_layout.dart';
 
@@ -70,5 +128,5 @@ void main() {
 
   // 출력
   File(outputPath).writeAsStringSync(output);
-  print('Generated: $outputPath');
+  print('Step C: Generated $outputPath');
 }

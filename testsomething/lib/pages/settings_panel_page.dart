@@ -18,8 +18,16 @@ class _SettingsPanelPageState extends State<SettingsPanelPage> {
   final Set<String> _selectedTags = {'Design', 'Flutter', 'Mobile'};
 
   final _allTags = [
-    'Design', 'Flutter', 'Mobile', 'Web', 'Backend',
-    'AI/ML', 'DevOps', 'Security', 'Testing', 'UI/UX',
+    'Design',
+    'Flutter',
+    'Mobile',
+    'Web',
+    'Backend',
+    'AI/ML',
+    'DevOps',
+    'Security',
+    'Testing',
+    'UI/UX',
   ];
 
   @override
@@ -114,10 +122,7 @@ class _SettingsPanelPageState extends State<SettingsPanelPage> {
                 SizedBox(height: 4),
                 Text(
                   'alex.johnson@email.com',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF7B7B8E),
-                  ),
+                  style: TextStyle(fontSize: 14, color: Color(0xFF7B7B8E)),
                 ),
               ],
             ),
@@ -143,26 +148,53 @@ class _SettingsPanelPageState extends State<SettingsPanelPage> {
   }
 
   Widget _buildToggleGroup() {
-    return _settingsCard(
-      'Preferences',
-      [
-        _toggleRow(Icons.dark_mode, 'Dark Mode', 'Use dark theme', _darkMode,
-            (v) => setState(() => _darkMode = v), const Color(0xFF6A11CB)),
-        const Divider(height: 1),
-        _toggleRow(Icons.notifications, 'Notifications', 'Push notifications', _notifications,
-            (v) => setState(() => _notifications = v), const Color(0xFF2575FC)),
-        const Divider(height: 1),
-        _toggleRow(Icons.fingerprint, 'Biometric Login', 'Face ID / Fingerprint', _biometric,
-            (v) => setState(() => _biometric = v), const Color(0xFFFF6B6B)),
-        const Divider(height: 1),
-        _toggleRow(Icons.system_update, 'Auto Update', 'Automatic updates', _autoUpdate,
-            (v) => setState(() => _autoUpdate = v), const Color(0xFF4CAF50)),
-      ],
-    );
+    return _settingsCard('Preferences', [
+      _toggleRow(
+        Icons.dark_mode,
+        'Dark Mode',
+        'Use dark theme',
+        _darkMode,
+        (v) => setState(() => _darkMode = v),
+        const Color(0xFF6A11CB),
+      ),
+      const Divider(height: 1),
+      _toggleRow(
+        Icons.notifications,
+        'Notifications',
+        'Push notifications',
+        _notifications,
+        (v) => setState(() => _notifications = v),
+        const Color(0xFF2575FC),
+      ),
+      const Divider(height: 1),
+      _toggleRow(
+        Icons.fingerprint,
+        'Biometric Login',
+        'Face ID / Fingerprint',
+        _biometric,
+        (v) => setState(() => _biometric = v),
+        const Color(0xFFFF6B6B),
+      ),
+      const Divider(height: 1),
+      _toggleRow(
+        Icons.system_update,
+        'Auto Update',
+        'Automatic updates',
+        _autoUpdate,
+        (v) => setState(() => _autoUpdate = v),
+        const Color(0xFF4CAF50),
+      ),
+    ]);
   }
 
-  Widget _toggleRow(IconData icon, String title, String subtitle, bool value,
-      ValueChanged<bool> onChanged, Color color) {
+  Widget _toggleRow(
+    IconData icon,
+    String title,
+    String subtitle,
+    bool value,
+    ValueChanged<bool> onChanged,
+    Color color,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
       child: Row(
@@ -190,7 +222,10 @@ class _SettingsPanelPageState extends State<SettingsPanelPage> {
                 ),
                 Text(
                   subtitle,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFFAAAAAA)),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFFAAAAAA),
+                  ),
                 ),
               ],
             ),
@@ -206,20 +241,38 @@ class _SettingsPanelPageState extends State<SettingsPanelPage> {
   }
 
   Widget _buildSliderGroup() {
-    return _settingsCard(
-      'Display',
-      [
-        _sliderRow(Icons.text_fields, 'Font Size', _fontSize, 10, 28,
-            (v) => setState(() => _fontSize = v), '${_fontSize.round()}pt'),
-        const Divider(height: 1),
-        _sliderRow(Icons.brightness_6, 'Brightness', _brightness, 0, 1,
-            (v) => setState(() => _brightness = v), '${(_brightness * 100).round()}%'),
-      ],
-    );
+    return _settingsCard('Display', [
+      _sliderRow(
+        Icons.text_fields,
+        'Font Size',
+        _fontSize,
+        10,
+        28,
+        (v) => setState(() => _fontSize = v),
+        '${_fontSize.round()}pt',
+      ),
+      const Divider(height: 1),
+      _sliderRow(
+        Icons.brightness_6,
+        'Brightness',
+        _brightness,
+        0,
+        1,
+        (v) => setState(() => _brightness = v),
+        '${(_brightness * 100).round()}%',
+      ),
+    ]);
   }
 
-  Widget _sliderRow(IconData icon, String title, double value, double min, double max,
-      ValueChanged<double> onChanged, String display) {
+  Widget _sliderRow(
+    IconData icon,
+    String title,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+    String display,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
       child: Column(
@@ -259,7 +312,9 @@ class _SettingsPanelPageState extends State<SettingsPanelPage> {
           SliderTheme(
             data: SliderThemeData(
               activeTrackColor: const Color(0xFF6A11CB),
-              inactiveTrackColor: const Color(0xFF6A11CB).withValues(alpha: 0.15),
+              inactiveTrackColor: const Color(
+                0xFF6A11CB,
+              ).withValues(alpha: 0.15),
               thumbColor: const Color(0xFF6A11CB),
               overlayColor: const Color(0xFF6A11CB).withValues(alpha: 0.1),
               trackHeight: 4,
@@ -278,151 +333,142 @@ class _SettingsPanelPageState extends State<SettingsPanelPage> {
 
   Widget _buildLanguageChips() {
     final languages = ['English', 'Korean', 'Japanese', 'Chinese'];
-    return _settingsCard(
-      'Language',
-      [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: languages.asMap().entries.map((e) {
-              final selected = _selectedLanguage == e.key;
-              return ChoiceChip(
-                label: Text(e.value),
-                selected: selected,
-                onSelected: (_) => setState(() => _selectedLanguage = e.key),
-                selectedColor: const Color(0xFF6A11CB),
-                backgroundColor: const Color(0xFFF0F0F5),
-                labelStyle: TextStyle(
-                  color: selected ? Colors.white : const Color(0xFF1A1A2E),
-                  fontWeight: FontWeight.w600,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                side: BorderSide.none,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              );
-            }).toList(),
-          ),
+    return _settingsCard('Language', [
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: languages.asMap().entries.map((e) {
+            final selected = _selectedLanguage == e.key;
+            return ChoiceChip(
+              label: Text(e.value),
+              selected: selected,
+              onSelected: (_) => setState(() => _selectedLanguage = e.key),
+              selectedColor: const Color(0xFF6A11CB),
+              backgroundColor: const Color(0xFFF0F0F5),
+              labelStyle: TextStyle(
+                color: selected ? Colors.white : const Color(0xFF1A1A2E),
+                fontWeight: FontWeight.w600,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              side: BorderSide.none,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            );
+          }).toList(),
         ),
-      ],
-    );
+      ),
+    ]);
   }
 
   Widget _buildTagSelection() {
-    return _settingsCard(
-      'Interests',
-      [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _allTags.map((tag) {
-              final selected = _selectedTags.contains(tag);
-              return FilterChip(
-                label: Text(tag),
-                selected: selected,
-                onSelected: (v) => setState(() {
-                  if (v) {
-                    _selectedTags.add(tag);
-                  } else {
-                    _selectedTags.remove(tag);
-                  }
-                }),
-                selectedColor: const Color(0xFF2575FC).withValues(alpha: 0.15),
-                checkmarkColor: const Color(0xFF2575FC),
-                backgroundColor: const Color(0xFFF0F0F5),
-                labelStyle: TextStyle(
-                  color: selected ? const Color(0xFF2575FC) : const Color(0xFF7B7B8E),
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                  fontSize: 13,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                side: selected
-                    ? const BorderSide(color: Color(0xFF2575FC), width: 1.5)
-                    : BorderSide.none,
-              );
-            }).toList(),
-          ),
+    return _settingsCard('Interests', [
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _allTags.map((tag) {
+            final selected = _selectedTags.contains(tag);
+            return FilterChip(
+              label: Text(tag),
+              selected: selected,
+              onSelected: (v) => setState(() {
+                if (v) {
+                  _selectedTags.add(tag);
+                } else {
+                  _selectedTags.remove(tag);
+                }
+              }),
+              selectedColor: const Color(0xFF2575FC).withValues(alpha: 0.15),
+              checkmarkColor: const Color(0xFF2575FC),
+              backgroundColor: const Color(0xFFF0F0F5),
+              labelStyle: TextStyle(
+                color: selected
+                    ? const Color(0xFF2575FC)
+                    : const Color(0xFF7B7B8E),
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                fontSize: 13,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              side: selected
+                  ? const BorderSide(color: Color(0xFF2575FC), width: 1.5)
+                  : BorderSide.none,
+            );
+          }).toList(),
         ),
-      ],
-    );
+      ),
+    ]);
   }
 
   Widget _buildProgressSection() {
-    return _settingsCard(
-      'Storage',
-      [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  RichText(
-                    text: const TextSpan(
-                      children: [
-                        TextSpan(
-                          text: '42.5 GB ',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1A1A2E),
-                          ),
+    return _settingsCard('Storage', [
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                RichText(
+                  text: const TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '42.5 GB ',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A1A2E),
                         ),
-                        TextSpan(
-                          text: '/ 64 GB',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Color(0xFF7B7B8E),
-                          ),
+                      ),
+                      TextSpan(
+                        text: '/ 64 GB',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Color(0xFF7B7B8E),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: CircularProgressIndicator(
-                      value: 0.66,
-                      strokeWidth: 4,
-                      backgroundColor: Color(0xFFE0E0E0),
-                      valueColor: AlwaysStoppedAnimation(Color(0xFF6A11CB)),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: const LinearProgressIndicator(
-                  value: 0.66,
-                  minHeight: 10,
-                  backgroundColor: Color(0xFFE0E0E0),
-                  valueColor: AlwaysStoppedAnimation(
-                    Color(0xFF6A11CB),
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: CircularProgressIndicator(
+                    value: 0.66,
+                    strokeWidth: 4,
+                    backgroundColor: Color(0xFFE0E0E0),
+                    valueColor: AlwaysStoppedAnimation(Color(0xFF6A11CB)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: const LinearProgressIndicator(
+                value: 0.66,
+                minHeight: 10,
+                backgroundColor: Color(0xFFE0E0E0),
+                valueColor: AlwaysStoppedAnimation(Color(0xFF6A11CB)),
               ),
-              const SizedBox(height: 16),
-              _storageRow('Photos', '18.2 GB', 0.43, const Color(0xFF2575FC)),
-              const SizedBox(height: 8),
-              _storageRow('Apps', '12.8 GB', 0.30, const Color(0xFFFF6B6B)),
-              const SizedBox(height: 8),
-              _storageRow('Documents', '8.1 GB', 0.19, const Color(0xFFFFB347)),
-              const SizedBox(height: 8),
-              _storageRow('Other', '3.4 GB', 0.08, const Color(0xFF4CAF50)),
-            ],
-          ),
+            ),
+            const SizedBox(height: 16),
+            _storageRow('Photos', '18.2 GB', 0.43, const Color(0xFF2575FC)),
+            const SizedBox(height: 8),
+            _storageRow('Apps', '12.8 GB', 0.30, const Color(0xFFFF6B6B)),
+            const SizedBox(height: 8),
+            _storageRow('Documents', '8.1 GB', 0.19, const Color(0xFFFFB347)),
+            const SizedBox(height: 8),
+            _storageRow('Other', '3.4 GB', 0.08, const Color(0xFF4CAF50)),
+          ],
         ),
-      ],
-    );
+      ),
+    ]);
   }
 
   Widget _storageRow(String label, String size, double fraction, Color color) {
@@ -440,10 +486,7 @@ class _SettingsPanelPageState extends State<SettingsPanelPage> {
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFF1A1A2E),
-            ),
+            style: const TextStyle(fontSize: 14, color: Color(0xFF1A1A2E)),
           ),
         ),
         Text(
@@ -484,7 +527,11 @@ class _SettingsPanelPageState extends State<SettingsPanelPage> {
               color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Icon(Icons.cloud_upload, color: Colors.white, size: 28),
+            child: const Icon(
+              Icons.cloud_upload,
+              color: Colors.white,
+              size: 28,
+            ),
           ),
           const SizedBox(width: 16),
           const Expanded(
@@ -502,10 +549,7 @@ class _SettingsPanelPageState extends State<SettingsPanelPage> {
                 SizedBox(height: 4),
                 Text(
                   'Get unlimited storage',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
             ),

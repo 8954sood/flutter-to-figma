@@ -1,5 +1,7 @@
 # Generated
 tools/generated_export_figma_layout.dart
+tools/crawler_source.dart
+figma_plugin/code.js
 
 # Extracted JSON
 *.json

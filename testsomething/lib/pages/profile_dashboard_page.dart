@@ -37,10 +37,7 @@ class ProfileDashboardPage extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF6A11CB),
-                  Color(0xFF2575FC),
-                ],
+                colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
               ),
               borderRadius: BorderRadius.only(
                 bottomLeft: Radius.circular(32),
@@ -49,7 +46,10 @@ class ProfileDashboardPage extends StatelessWidget {
             ),
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -68,7 +68,11 @@ class ProfileDashboardPage extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       padding: const EdgeInsets.all(8),
-                      child: const Icon(Icons.edit, color: Colors.white, size: 20),
+                      child: const Icon(
+                        Icons.edit,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ],
                 ),
@@ -128,10 +132,7 @@ class ProfileDashboardPage extends StatelessWidget {
         SizedBox(height: 8),
         Text(
           'San Francisco, CA',
-          style: TextStyle(
-            fontSize: 14,
-            color: Color(0xFFAAAAAA),
-          ),
+          style: TextStyle(fontSize: 14, color: Color(0xFFAAAAAA)),
         ),
       ],
     );
@@ -148,16 +149,46 @@ class ProfileDashboardPage extends StatelessWidget {
         crossAxisSpacing: 16,
         childAspectRatio: 1.3,
         children: [
-          _statCard('Projects', '148', Icons.work_outline, const Color(0xFF6A11CB), const Color(0xFFF0E6FF)),
-          _statCard('Followers', '12.4K', Icons.people_outline, const Color(0xFF2575FC), const Color(0xFFE6F0FF)),
-          _statCard('Reviews', '4.9', Icons.star_outline, const Color(0xFFFF6B6B), const Color(0xFFFFE6E6)),
-          _statCard('Awards', '23', Icons.emoji_events_outlined, const Color(0xFFFFB347), const Color(0xFFFFF3E0)),
+          _statCard(
+            'Projects',
+            '148',
+            Icons.work_outline,
+            const Color(0xFF6A11CB),
+            const Color(0xFFF0E6FF),
+          ),
+          _statCard(
+            'Followers',
+            '12.4K',
+            Icons.people_outline,
+            const Color(0xFF2575FC),
+            const Color(0xFFE6F0FF),
+          ),
+          _statCard(
+            'Reviews',
+            '4.9',
+            Icons.star_outline,
+            const Color(0xFFFF6B6B),
+            const Color(0xFFFFE6E6),
+          ),
+          _statCard(
+            'Awards',
+            '23',
+            Icons.emoji_events_outlined,
+            const Color(0xFFFFB347),
+            const Color(0xFFFFF3E0),
+          ),
         ],
       ),
     );
   }
 
-  Widget _statCard(String label, String value, IconData icon, Color accentColor, Color bgColor) {
+  Widget _statCard(
+    String label,
+    String value,
+    IconData icon,
+    Color accentColor,
+    Color bgColor,
+  ) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -206,8 +237,18 @@ class ProfileDashboardPage extends StatelessWidget {
 
   Widget _buildRecentActivity() {
     final activities = [
-      ('Completed project "Redesign"', '2h ago', Icons.check_circle, const Color(0xFF4CAF50)),
-      ('New follower: Jane Smith', '5h ago', Icons.person_add, const Color(0xFF2575FC)),
+      (
+        'Completed project "Redesign"',
+        '2h ago',
+        Icons.check_circle,
+        const Color(0xFF4CAF50),
+      ),
+      (
+        'New follower: Jane Smith',
+        '5h ago',
+        Icons.person_add,
+        const Color(0xFF2575FC),
+      ),
       ('Received 5-star review', '1d ago', Icons.star, const Color(0xFFFFB347)),
     ];
 
@@ -225,58 +266,60 @@ class ProfileDashboardPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          ...activities.map((a) => Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: a.$4.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
+          ...activities.map(
+            (a) => Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
-                  child: Icon(a.$3, color: a.$4, size: 20),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        a.$1,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A2E),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        a.$2,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFFAAAAAA),
-                        ),
-                      ),
-                    ],
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: a.$4.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(a.$3, color: a.$4, size: 20),
                   ),
-                ),
-                const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC)),
-              ],
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          a.$1,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A2E),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          a.$2,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFAAAAAA),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC)),
+                ],
+              ),
             ),
-          )),
+          ),
         ],
       ),
     );

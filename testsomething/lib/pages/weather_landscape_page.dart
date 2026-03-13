@@ -53,10 +53,7 @@ class WeatherLandscapePage extends StatelessWidget {
   }
 
   Widget _buildDecoCircles() {
-    return CustomPaint(
-      size: Size.infinite,
-      painter: _CirclePainter(),
-    );
+    return CustomPaint(size: Size.infinite, painter: _CirclePainter());
   }
 
   Widget _buildTopBar() {
@@ -221,67 +218,74 @@ class WeatherLandscapePage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        ...days.map((d) => Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                ),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 40,
-                      child: Text(
-                        d.$1,
+        ...days.map(
+          (d) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 40,
+                        child: Text(
+                          d.$1,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Icon(d.$2, color: const Color(0xFFFFD700), size: 22),
+                      const Spacer(),
+                      Text(
+                        d.$3,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        width: 80,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(2),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF38EF7D), Color(0xFFFFD700)],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        d.$4,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 16,
                         ),
                       ),
-                    ),
-                    Icon(d.$2, color: const Color(0xFFFFD700), size: 22),
-                    const Spacer(),
-                    Text(
-                      d.$3,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 80,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(2),
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF38EF7D), Color(0xFFFFD700)],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      d.$4,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        )),
+        ),
       ],
     );
   }
@@ -294,7 +298,11 @@ class _CirclePainter extends CustomPainter {
 
     // Large translucent circle top-right
     paint.color = const Color(0xFF38EF7D).withValues(alpha: 0.08);
-    canvas.drawCircle(Offset(size.width * 0.85, size.height * 0.12), 120, paint);
+    canvas.drawCircle(
+      Offset(size.width * 0.85, size.height * 0.12),
+      120,
+      paint,
+    );
 
     // Medium circle bottom-left
     paint.color = const Color(0xFFFFD700).withValues(alpha: 0.06);

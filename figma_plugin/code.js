@@ -1,3 +1,153 @@
+// ============================================================
+// 유지하는 헬퍼 함수들
+// ============================================================
+
+// --- 색상 파싱 (Flutter ARGB → Figma RGBA) ---
+function parseFlutterColor(hex) {
+  if (!hex || typeof hex !== "string") {
+    return { r: 0, g: 0, b: 0, a: 1 };
+  }
+  var value = hex.trim();
+  if (value.charAt(0) === "#") value = value.slice(1);
+
+  var a = 1, r = 0, g = 0, b = 0;
+
+  if (value.length === 8) {
+    a = parseInt(value.slice(0, 2), 16) / 255;
+    r = parseInt(value.slice(2, 4), 16) / 255;
+    g = parseInt(value.slice(4, 6), 16) / 255;
+    b = parseInt(value.slice(6, 8), 16) / 255;
+  } else if (value.length === 6) {
+    r = parseInt(value.slice(0, 2), 16) / 255;
+    g = parseInt(value.slice(2, 4), 16) / 255;
+    b = parseInt(value.slice(4, 6), 16) / 255;
+  }
+
+  return { r: r, g: g, b: b, a: a };
+}
+
+// --- 폰트 이름 매핑 ---
+function resolveFont(family, fontWeight) {
+  var key = String(fontWeight).split(".").pop() || "w400";
+  var candidates = {
+    w100: ["Thin", "Hairline", "ExtraThin"],
+    w200: ["ExtraLight", "UltraLight", "Extra Light", "Ultra Light"],
+    w300: ["Light"],
+    w400: ["Regular", "Normal"],
+    w500: ["Medium"],
+    w600: ["SemiBold", "Semi Bold", "DemiBold"],
+    w700: ["Bold"],
+    w800: ["ExtraBold", "UltraBold", "Extra Bold", "Ultra Bold"],
+    w900: ["Black", "Heavy"],
+  };
+  var styles = candidates[key] || ["Regular"];
+  var fam = family || "Inter";
+  var firstStyle = styles[0];
+
+  // preloadFonts에서 실제 로드된 스타일 확인
+  var resolveKey = fam + "::" + firstStyle;
+  var actualStyle = resolvedFonts[resolveKey];
+  var actualFamily = resolvedFonts[resolveKey + "::family"] || fam;
+  if (actualStyle) {
+    return { family: actualFamily, style: actualStyle };
+  }
+
+  // preload 전 호출 (수집 단계) → 후보 리스트 포함
+  return { family: fam, style: firstStyle, _candidates: styles };
+}
+
+// --- TextAlign 매핑 ---
+function mapTextAlign(textAlign) {
+  var key = String(textAlign).split(".").pop();
+  if (key === "center") return "CENTER";
+  if (key === "end" || key === "right") return "RIGHT";
+  return "LEFT";
+}
+
+// --- Image fit 매핑 ---
+function mapImageFit(fit) {
+  var key = String(fit || "").toLowerCase();
+  if (key === "contain" || key === "fitwidth" || key === "fitheight") return "FIT";
+  if (key === "none" || key === "scaledown") return "FIT";
+  return "FILL";
+}
+
+// --- BoxFit → Figma scaleMode 매핑 ---
+function mapBoxFitToScaleMode(fit) {
+  var key = String(fit || "").toLowerCase();
+  if (key === "contain" || key === "fitwidth" || key === "fitheight" || key === "scaledown") return "FIT";
+  if (key === "cover") return "FILL";
+  if (key === "fill") return "FILL";
+  if (key === "none") return "FIT";
+  return "FILL";
+}
+
+// --- Alignment 매핑 ---
+function mapMainAxisAlign(val) {
+  var key = String(val || "").split(".").pop();
+  if (key === "center") return "CENTER";
+  if (key === "end") return "MAX";
+  if (key === "spaceBetween") return "SPACE_BETWEEN";
+  if (key === "spaceAround") return "SPACE_BETWEEN";
+  if (key === "spaceEvenly") return "SPACE_BETWEEN";
+  return "MIN";
+}
+
+function mapCrossAxisAlign(val) {
+  var key = String(val || "").split(".").pop();
+  if (key === "center") return "CENTER";
+  if (key === "end") return "MAX";
+  if (key === "stretch") return "MIN"; // Figma에서 stretch는 자식별 FILL로 처리
+  return "MIN";
+}
+
+// --- Base64 → Uint8Array ---
+function base64ToUint8Array(base64) {
+  if (!base64 || typeof base64 !== "string") {
+    return new Uint8Array(0);
+  }
+
+  var cleaned = base64.trim();
+  var commaIndex = cleaned.indexOf(",");
+  if (commaIndex !== -1 && cleaned.slice(0, 5).toLowerCase() === "data:") {
+    cleaned = cleaned.slice(commaIndex + 1);
+  }
+  cleaned = cleaned.replace(/[^A-Za-z0-9+/=]/g, "");
+
+  while (cleaned.length % 4 !== 0) {
+    cleaned += "=";
+  }
+
+  var encTable =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  var len = cleaned.length;
+
+  var outputLen = (len / 4) * 3;
+  if (cleaned.endsWith("==")) outputLen -= 2;
+  else if (cleaned.endsWith("=")) outputLen -= 1;
+
+  var bytes = new Uint8Array(outputLen);
+  var p = 0;
+
+  for (var i = 0; i < len; i += 4) {
+    var c1 = encTable.indexOf(cleaned.charAt(i));
+    var c2 = encTable.indexOf(cleaned.charAt(i + 1));
+    var c3 = encTable.indexOf(cleaned.charAt(i + 2));
+    var c4 = encTable.indexOf(cleaned.charAt(i + 3));
+
+    var triple = (c1 << 18) | (c2 << 12) | ((c3 & 63) << 6) | (c4 & 63);
+
+    bytes[p++] = (triple >> 16) & 0xff;
+    if (cleaned.charAt(i + 2) !== "=") {
+      if (p < outputLen) bytes[p++] = (triple >> 8) & 0xff;
+    }
+    if (cleaned.charAt(i + 3) !== "=") {
+      if (p < outputLen) bytes[p++] = triple & 0xff;
+    }
+  }
+
+  return bytes;
+}
 // ============================
 // Flutter Layout → Figma (Flat properties schema + Auto-Layout)
 // 3-Phase Pipeline: Preprocess → Font Load → Render
@@ -7,44 +157,6 @@ figma.showUI(__html__, { width: 360, height: 380 });
 
 var loadedFonts = {}; // "family::style" → true
 var resolvedFonts = {}; // "family::originalStyle" → actual loaded style
-
-// ----------------------------
-// UI 메시지 핸들러
-// ----------------------------
-figma.ui.onmessage = function (msg) {
-  if (msg.type === "close") {
-    figma.closePlugin();
-    return;
-  }
-
-  if (msg.type === "render-flutter-layout" || msg.type === "import-layout") {
-    var jsonText = msg.json || msg.data;
-    if (!jsonText) {
-      figma.notify("JSON 내용이 비어 있습니다.");
-      return;
-    }
-
-    var root;
-    try {
-      root = JSON.parse(jsonText);
-    } catch (e) {
-      console.error("[FlutterPlugin] JSON parse error", e);
-      figma.notify("JSON 파싱에 실패했습니다.");
-      return;
-    }
-
-    renderWholeLayout(root)
-      .then(function () {
-        figma.notify("레이아웃 복원이 완료되었습니다.");
-      })
-      .catch(function (e) {
-        console.error("[FlutterPlugin] renderWholeLayout error", e);
-        var msgText = "Import failed";
-        if (e && e.message) msgText += ": " + e.message;
-        figma.notify(msgText);
-      });
-  }
-};
 
 // ============================================================
 // Phase 0: Schema v2 → flat properties 변환
@@ -202,7 +314,6 @@ function normalizeSchemaV2(node) {
   delete node.childLayout;
   if (node.layoutMode) delete node.layoutMode;
 }
-
 // ============================================================
 // Phase 1: 전처리 (순수 JS, Figma API 호출 없음)
 // ============================================================
@@ -267,6 +378,196 @@ function flattenEmptyWrappers(node) {
   return node;
 }
 
+// --- 1.2 mergeWrapperChains ---
+function mergeWrapperChains(node) {
+  if (!node || typeof node !== "object") return node;
+
+  // 먼저 자식을 재귀적으로 처리
+  if (node.children && node.children.length > 0) {
+    for (var i = 0; i < node.children.length; i++) {
+      node.children[i] = mergeWrapperChains(node.children[i]);
+    }
+  }
+
+  if (node.type !== "Frame") return node;
+
+  // Chip widgetName이 있는 노드는 mergeWrapperChains 스킵 → handleChip에서 처리
+  if (node.widgetName === "Chip") return node;
+
+  // 체인 수집: Frame + children.length===1 + child.type===Frame
+  // visual 속성이 있는 노드에서 중단 (시각적 경계 보존)
+  var chain = [node];
+  var current = node;
+  while (
+    current.type === "Frame" &&
+    current.children &&
+    current.children.length === 1 &&
+    current.children[0].type === "Frame"
+  ) {
+    var next = current.children[0];
+    var np = next.properties || {};
+    var cp = current.properties || {};
+
+    // widgetName이 있는 노드는 병합 중단
+    if (next.widgetName) break;
+
+    // rotation이 있는 노드는 병합 중단 (좌표계가 다름)
+    if (np.rotation) break;
+
+    var nextHasVisual = np.backgroundColor || np.hasBorder || np.borderRadius ||
+        np.elevation || np.shadowColor || np.isIconBox || np.isSvgBox;
+    var curHasVisual = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
+        cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox;
+
+    if (nextHasVisual) {
+      if (curHasVisual) break; // 양쪽 다 visual → 병합 중단
+      // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
+      current = next;
+      chain.push(current);
+      break;
+    }
+
+    // 센터링/끝정렬 컨테이너 보존
+    var outerHasFlexGrow = ((chain[0].properties || {}).flexGrow || 0) > 0;
+    if (curHasVisual && !outerHasFlexGrow && cp.mainAxisSize === "FIXED" &&
+        (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
+         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) break;
+    // NONE 프레임의 암시적 패딩 계산: 유의미한 자식(Text, visual Frame) 좌표로 추출
+    // (빈 STACK/artifact는 프레임 밖 좌표를 가질 수 있으므로 제외)
+    // rotation이 있는 자식은 좌표가 회전 전 기준이므로 패딩 계산 스킵
+    var hasRotatedChild = false;
+    if (next.children) {
+      for (var ri = 0; ri < next.children.length; ri++) {
+        if ((next.children[ri].properties || {}).rotation) { hasRotatedChild = true; break; }
+      }
+    }
+    if (!np.layoutMode && !hasRotatedChild && next.children && next.children.length > 0) {
+      var nRect = next.rect || {};
+      var nrx = nRect.x || 0, nry = nRect.y || 0;
+      var nrw = nRect.w || 0, nrh = nRect.h || 0;
+      var cMinX = Infinity, cMinY = Infinity, cMaxX = 0, cMaxY = 0;
+      var hasContent = false;
+      for (var ci = 0; ci < next.children.length; ci++) {
+        var cc = next.children[ci];
+        // Text 노드 또는 visual이 있는 Frame만 고려
+        if (cc.type === "Text") { /* ok */ }
+        else if (cc.type === "Frame") {
+          var ccp = cc.properties || {};
+          var hasVis = ccp.backgroundColor || ccp.hasBorder || ccp.borderRadius ||
+                       ccp.isIconBox || ccp.content;
+          var hasCh = cc.children && cc.children.length > 0;
+          if (!hasVis && !hasCh) continue; // 빈 artifact → 스킵
+        } else continue;
+        var cr = cc.rect || {};
+        var lx = (cr.x || 0) - nrx;
+        var ly = (cr.y || 0) - nry;
+        if (lx < cMinX) cMinX = lx;
+        if (ly < cMinY) cMinY = ly;
+        if (lx + (cr.w || 0) > cMaxX) cMaxX = lx + (cr.w || 0);
+        if (ly + (cr.h || 0) > cMaxY) cMaxY = ly + (cr.h || 0);
+        hasContent = true;
+      }
+      if (hasContent && cMinX !== Infinity) {
+        np.paddingTop = (np.paddingTop || 0) + Math.max(0, Math.round(cMinY));
+        np.paddingLeft = (np.paddingLeft || 0) + Math.max(0, Math.round(cMinX));
+        np.paddingBottom = (np.paddingBottom || 0) + Math.max(0, Math.round(nrh - cMaxY));
+        np.paddingRight = (np.paddingRight || 0) + Math.max(0, Math.round(nrw - cMaxX));
+        next.properties = np;
+      }
+    }
+
+    current = next;
+    chain.push(current);
+  }
+
+  if (chain.length < 2) return node;
+
+  // 속성 병합
+  var merged = chain[chain.length - 1]; // 가장 안쪽 노드를 베이스로
+  var mergedProps = Object.assign({}, merged.properties || {});
+
+  // 바깥에서 안쪽으로 순회하며 병합
+  for (var i = 0; i < chain.length - 1; i++) {
+    var outerProps = chain[i].properties || {};
+    mergePropsInto(mergedProps, outerProps, i === 0);
+  }
+
+  merged.properties = mergedProps;
+  // rect: 바깥쪽 사용 (전체 바운딩 박스)
+  merged.rect = chain[0].rect || merged.rect;
+
+  // widgetName: 바깥쪽 노드의 widgetName 전파
+  if (chain[0].widgetName && !merged.widgetName) {
+    merged.widgetName = chain[0].widgetName;
+  }
+
+  // clipPath: 체인 중 clipPath를 가진 노드가 있으면 보존
+  for (var ci = 0; ci < chain.length; ci++) {
+    if (chain[ci].clipPath) {
+      merged.clipPath = chain[ci].clipPath;
+      break;
+    }
+  }
+
+  return merged;
+}
+
+function mergePropsInto(target, source, isOutermost) {
+  var keys = Object.keys(source);
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var val = source[key];
+
+    // Visual (bg, border, radius): 안쪽 우선 (투명 제외)
+    if (key === "backgroundColor") {
+      if (!target[key] || isTransparent(target[key])) {
+        if (!isTransparent(val)) target[key] = val;
+      }
+      continue;
+    }
+    if (key === "gradient") {
+      if (!(key in target)) target[key] = val;
+      continue;
+    }
+    if (key === "hasBorder" || key === "borderWidth" || key === "borderColor" || key === "borderRadius" ||
+        key === "borderTopWidth" || key === "borderRightWidth" || key === "borderBottomWidth" || key === "borderLeftWidth") {
+      if (!(key in target)) target[key] = val;
+      continue;
+    }
+
+    // Layout (layoutMode, alignment, spacing): 있는 곳에서 가져옴
+    if (key === "layoutMode" || key === "mainAxisAlignment" || key === "crossAxisAlignment" ||
+        key === "mainAxisSize" || key === "itemSpacing") {
+      if (!(key in target)) target[key] = val;
+      continue;
+    }
+
+    // Padding: 있는 곳에서 가져옴 (중복 시 합산)
+    if (key === "paddingTop" || key === "paddingRight" || key === "paddingBottom" || key === "paddingLeft") {
+      if (key in target) {
+        target[key] = (target[key] || 0) + (val || 0);
+      } else {
+        target[key] = val;
+      }
+      continue;
+    }
+
+    // Flex (flexGrow, flexFit): 바깥쪽 우선
+    if (key === "flexGrow" || key === "flexFit") {
+      if (isOutermost) {
+        target[key] = val;
+      } else if (!(key in target)) {
+        target[key] = val;
+      }
+      continue;
+    }
+
+    // 나머지: 없으면 가져옴
+    if (!(key in target)) {
+      target[key] = val;
+    }
+  }
+}
 // --- 1.1.5 preprocessNamedWidgets ---
 function preprocessNamedWidgets(node) {
   if (!node || typeof node !== "object") return;
@@ -642,198 +943,6 @@ function handleBottomNavigationBar(node) {
     children[i].properties = cp;
   }
 }
-
-// --- 1.2 mergeWrapperChains ---
-function mergeWrapperChains(node) {
-  if (!node || typeof node !== "object") return node;
-
-  // 먼저 자식을 재귀적으로 처리
-  if (node.children && node.children.length > 0) {
-    for (var i = 0; i < node.children.length; i++) {
-      node.children[i] = mergeWrapperChains(node.children[i]);
-    }
-  }
-
-  if (node.type !== "Frame") return node;
-
-  // Chip widgetName이 있는 노드는 mergeWrapperChains 스킵 → handleChip에서 처리
-  if (node.widgetName === "Chip") return node;
-
-  // 체인 수집: Frame + children.length===1 + child.type===Frame
-  // visual 속성이 있는 노드에서 중단 (시각적 경계 보존)
-  var chain = [node];
-  var current = node;
-  while (
-    current.type === "Frame" &&
-    current.children &&
-    current.children.length === 1 &&
-    current.children[0].type === "Frame"
-  ) {
-    var next = current.children[0];
-    var np = next.properties || {};
-    var cp = current.properties || {};
-
-    // widgetName이 있는 노드는 병합 중단
-    if (next.widgetName) break;
-
-    // rotation이 있는 노드는 병합 중단 (좌표계가 다름)
-    if (np.rotation) break;
-
-    var nextHasVisual = np.backgroundColor || np.hasBorder || np.borderRadius ||
-        np.elevation || np.shadowColor || np.isIconBox || np.isSvgBox;
-    var curHasVisual = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
-        cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox;
-
-    if (nextHasVisual) {
-      if (curHasVisual) break; // 양쪽 다 visual → 병합 중단
-      // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
-      current = next;
-      chain.push(current);
-      break;
-    }
-
-    // 센터링/끝정렬 컨테이너 보존
-    var outerHasFlexGrow = ((chain[0].properties || {}).flexGrow || 0) > 0;
-    if (curHasVisual && !outerHasFlexGrow && cp.mainAxisSize === "FIXED" &&
-        (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
-         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) break;
-    // NONE 프레임의 암시적 패딩 계산: 유의미한 자식(Text, visual Frame) 좌표로 추출
-    // (빈 STACK/artifact는 프레임 밖 좌표를 가질 수 있으므로 제외)
-    // rotation이 있는 자식은 좌표가 회전 전 기준이므로 패딩 계산 스킵
-    var hasRotatedChild = false;
-    if (next.children) {
-      for (var ri = 0; ri < next.children.length; ri++) {
-        if ((next.children[ri].properties || {}).rotation) { hasRotatedChild = true; break; }
-      }
-    }
-    if (!np.layoutMode && !hasRotatedChild && next.children && next.children.length > 0) {
-      var nRect = next.rect || {};
-      var nrx = nRect.x || 0, nry = nRect.y || 0;
-      var nrw = nRect.w || 0, nrh = nRect.h || 0;
-      var cMinX = Infinity, cMinY = Infinity, cMaxX = 0, cMaxY = 0;
-      var hasContent = false;
-      for (var ci = 0; ci < next.children.length; ci++) {
-        var cc = next.children[ci];
-        // Text 노드 또는 visual이 있는 Frame만 고려
-        if (cc.type === "Text") { /* ok */ }
-        else if (cc.type === "Frame") {
-          var ccp = cc.properties || {};
-          var hasVis = ccp.backgroundColor || ccp.hasBorder || ccp.borderRadius ||
-                       ccp.isIconBox || ccp.content;
-          var hasCh = cc.children && cc.children.length > 0;
-          if (!hasVis && !hasCh) continue; // 빈 artifact → 스킵
-        } else continue;
-        var cr = cc.rect || {};
-        var lx = (cr.x || 0) - nrx;
-        var ly = (cr.y || 0) - nry;
-        if (lx < cMinX) cMinX = lx;
-        if (ly < cMinY) cMinY = ly;
-        if (lx + (cr.w || 0) > cMaxX) cMaxX = lx + (cr.w || 0);
-        if (ly + (cr.h || 0) > cMaxY) cMaxY = ly + (cr.h || 0);
-        hasContent = true;
-      }
-      if (hasContent && cMinX !== Infinity) {
-        np.paddingTop = (np.paddingTop || 0) + Math.max(0, Math.round(cMinY));
-        np.paddingLeft = (np.paddingLeft || 0) + Math.max(0, Math.round(cMinX));
-        np.paddingBottom = (np.paddingBottom || 0) + Math.max(0, Math.round(nrh - cMaxY));
-        np.paddingRight = (np.paddingRight || 0) + Math.max(0, Math.round(nrw - cMaxX));
-        next.properties = np;
-      }
-    }
-
-    current = next;
-    chain.push(current);
-  }
-
-  if (chain.length < 2) return node;
-
-  // 속성 병합
-  var merged = chain[chain.length - 1]; // 가장 안쪽 노드를 베이스로
-  var mergedProps = Object.assign({}, merged.properties || {});
-
-  // 바깥에서 안쪽으로 순회하며 병합
-  for (var i = 0; i < chain.length - 1; i++) {
-    var outerProps = chain[i].properties || {};
-    mergePropsInto(mergedProps, outerProps, i === 0);
-  }
-
-  merged.properties = mergedProps;
-  // rect: 바깥쪽 사용 (전체 바운딩 박스)
-  merged.rect = chain[0].rect || merged.rect;
-
-  // widgetName: 바깥쪽 노드의 widgetName 전파
-  if (chain[0].widgetName && !merged.widgetName) {
-    merged.widgetName = chain[0].widgetName;
-  }
-
-  // clipPath: 체인 중 clipPath를 가진 노드가 있으면 보존
-  for (var ci = 0; ci < chain.length; ci++) {
-    if (chain[ci].clipPath) {
-      merged.clipPath = chain[ci].clipPath;
-      break;
-    }
-  }
-
-  return merged;
-}
-
-function mergePropsInto(target, source, isOutermost) {
-  var keys = Object.keys(source);
-  for (var i = 0; i < keys.length; i++) {
-    var key = keys[i];
-    var val = source[key];
-
-    // Visual (bg, border, radius): 안쪽 우선 (투명 제외)
-    if (key === "backgroundColor") {
-      if (!target[key] || isTransparent(target[key])) {
-        if (!isTransparent(val)) target[key] = val;
-      }
-      continue;
-    }
-    if (key === "gradient") {
-      if (!(key in target)) target[key] = val;
-      continue;
-    }
-    if (key === "hasBorder" || key === "borderWidth" || key === "borderColor" || key === "borderRadius" ||
-        key === "borderTopWidth" || key === "borderRightWidth" || key === "borderBottomWidth" || key === "borderLeftWidth") {
-      if (!(key in target)) target[key] = val;
-      continue;
-    }
-
-    // Layout (layoutMode, alignment, spacing): 있는 곳에서 가져옴
-    if (key === "layoutMode" || key === "mainAxisAlignment" || key === "crossAxisAlignment" ||
-        key === "mainAxisSize" || key === "itemSpacing") {
-      if (!(key in target)) target[key] = val;
-      continue;
-    }
-
-    // Padding: 있는 곳에서 가져옴 (중복 시 합산)
-    if (key === "paddingTop" || key === "paddingRight" || key === "paddingBottom" || key === "paddingLeft") {
-      if (key in target) {
-        target[key] = (target[key] || 0) + (val || 0);
-      } else {
-        target[key] = val;
-      }
-      continue;
-    }
-
-    // Flex (flexGrow, flexFit): 바깥쪽 우선
-    if (key === "flexGrow" || key === "flexFit") {
-      if (isOutermost) {
-        target[key] = val;
-      } else if (!(key in target)) {
-        target[key] = val;
-      }
-      continue;
-    }
-
-    // 나머지: 없으면 가져옴
-    if (!(key in target)) {
-      target[key] = val;
-    }
-  }
-}
-
 // --- 1.3 inferMissingLayout ---
 function sortChildrenByAxis(children, axis) {
   // axis: "y" or "x"
@@ -909,7 +1018,6 @@ function inferMissingLayout(node) {
     node.properties = props;
   }
 }
-
 // --- 1.4 convertSpacersToItemSpacing ---
 function isSpacer(child, parentLayoutMode) {
   if (!child || child.type !== "Frame") return false;
@@ -1115,7 +1223,6 @@ function recalcItemSpacing(node) {
   props.itemSpacing = mostCommonValue(gaps);
   node.properties = props;
 }
-
 // --- 1.6 assignSizingHints ---
 function assignSizingHints(node, parentProps) {
   if (!node || typeof node !== "object") return;
@@ -1229,7 +1336,6 @@ function assignSizingHints(node, parentProps) {
     }
   }
 }
-
 // ============================================================
 // Phase 1 헬퍼
 // ============================================================
@@ -1264,7 +1370,6 @@ function parseBorderRadius(val) {
   var v = parseFloat(s);
   return isNaN(v) ? 0 : v;
 }
-
 // ============================================================
 // Phase 2: 폰트 로딩
 // ============================================================
@@ -1365,7 +1470,6 @@ async function preloadFonts(rootNode) {
   }
   await Promise.all(promises);
 }
-
 // ============================================================
 // Phase 3: 렌더링
 // ============================================================
@@ -1731,7 +1835,6 @@ function renderNode(node, parentFigma, parentLayoutDir) {
     } catch (e) {}
   }
 }
-
 // ----------------------------
 // applyVisualProps: 배경색, 테두리, 둥근 모서리, 그림자
 // ----------------------------
@@ -1933,7 +2036,6 @@ function buildSweepGradientTransform(cx, cy) {
     [0, 1, 0.5 - cy]
   ];
 }
-
 // ----------------------------
 // applyAutoLayout: layoutMode, spacing, padding, alignment
 // ----------------------------
@@ -2055,7 +2157,6 @@ function applySizing(figNode, jsonNode, parentLayoutDir) {
     } catch (e2) {}
   }
 }
-
 // ----------------------------
 // Text 속성 적용 (flat properties에서 읽기)
 // ----------------------------
@@ -2211,153 +2312,40 @@ function applyImageProps(rectNode, props) {
   }
 }
 
-// ============================================================
-// 유지하는 헬퍼 함수들
-// ============================================================
-
-// --- 색상 파싱 (Flutter ARGB → Figma RGBA) ---
-function parseFlutterColor(hex) {
-  if (!hex || typeof hex !== "string") {
-    return { r: 0, g: 0, b: 0, a: 1 };
-  }
-  var value = hex.trim();
-  if (value.charAt(0) === "#") value = value.slice(1);
-
-  var a = 1, r = 0, g = 0, b = 0;
-
-  if (value.length === 8) {
-    a = parseInt(value.slice(0, 2), 16) / 255;
-    r = parseInt(value.slice(2, 4), 16) / 255;
-    g = parseInt(value.slice(4, 6), 16) / 255;
-    b = parseInt(value.slice(6, 8), 16) / 255;
-  } else if (value.length === 6) {
-    r = parseInt(value.slice(0, 2), 16) / 255;
-    g = parseInt(value.slice(2, 4), 16) / 255;
-    b = parseInt(value.slice(4, 6), 16) / 255;
+// ----------------------------
+// UI 메시지 핸들러
+// ----------------------------
+figma.ui.onmessage = function (msg) {
+  if (msg.type === "close") {
+    figma.closePlugin();
+    return;
   }
 
-  return { r: r, g: g, b: b, a: a };
-}
-
-// --- 폰트 이름 매핑 ---
-function resolveFont(family, fontWeight) {
-  var key = String(fontWeight).split(".").pop() || "w400";
-  var candidates = {
-    w100: ["Thin", "Hairline", "ExtraThin"],
-    w200: ["ExtraLight", "UltraLight", "Extra Light", "Ultra Light"],
-    w300: ["Light"],
-    w400: ["Regular", "Normal"],
-    w500: ["Medium"],
-    w600: ["SemiBold", "Semi Bold", "DemiBold"],
-    w700: ["Bold"],
-    w800: ["ExtraBold", "UltraBold", "Extra Bold", "Ultra Bold"],
-    w900: ["Black", "Heavy"],
-  };
-  var styles = candidates[key] || ["Regular"];
-  var fam = family || "Inter";
-  var firstStyle = styles[0];
-
-  // preloadFonts에서 실제 로드된 스타일 확인
-  var resolveKey = fam + "::" + firstStyle;
-  var actualStyle = resolvedFonts[resolveKey];
-  var actualFamily = resolvedFonts[resolveKey + "::family"] || fam;
-  if (actualStyle) {
-    return { family: actualFamily, style: actualStyle };
-  }
-
-  // preload 전 호출 (수집 단계) → 후보 리스트 포함
-  return { family: fam, style: firstStyle, _candidates: styles };
-}
-
-// --- TextAlign 매핑 ---
-function mapTextAlign(textAlign) {
-  var key = String(textAlign).split(".").pop();
-  if (key === "center") return "CENTER";
-  if (key === "end" || key === "right") return "RIGHT";
-  return "LEFT";
-}
-
-// --- Image fit 매핑 ---
-function mapImageFit(fit) {
-  var key = String(fit || "").toLowerCase();
-  if (key === "contain" || key === "fitwidth" || key === "fitheight") return "FIT";
-  if (key === "none" || key === "scaledown") return "FIT";
-  return "FILL";
-}
-
-// --- BoxFit → Figma scaleMode 매핑 ---
-function mapBoxFitToScaleMode(fit) {
-  var key = String(fit || "").toLowerCase();
-  if (key === "contain" || key === "fitwidth" || key === "fitheight" || key === "scaledown") return "FIT";
-  if (key === "cover") return "FILL";
-  if (key === "fill") return "FILL";
-  if (key === "none") return "FIT";
-  return "FILL";
-}
-
-// --- Alignment 매핑 ---
-function mapMainAxisAlign(val) {
-  var key = String(val || "").split(".").pop();
-  if (key === "center") return "CENTER";
-  if (key === "end") return "MAX";
-  if (key === "spaceBetween") return "SPACE_BETWEEN";
-  if (key === "spaceAround") return "SPACE_BETWEEN";
-  if (key === "spaceEvenly") return "SPACE_BETWEEN";
-  return "MIN";
-}
-
-function mapCrossAxisAlign(val) {
-  var key = String(val || "").split(".").pop();
-  if (key === "center") return "CENTER";
-  if (key === "end") return "MAX";
-  if (key === "stretch") return "MIN"; // Figma에서 stretch는 자식별 FILL로 처리
-  return "MIN";
-}
-
-// --- Base64 → Uint8Array ---
-function base64ToUint8Array(base64) {
-  if (!base64 || typeof base64 !== "string") {
-    return new Uint8Array(0);
-  }
-
-  var cleaned = base64.trim();
-  var commaIndex = cleaned.indexOf(",");
-  if (commaIndex !== -1 && cleaned.slice(0, 5).toLowerCase() === "data:") {
-    cleaned = cleaned.slice(commaIndex + 1);
-  }
-  cleaned = cleaned.replace(/[^A-Za-z0-9+/=]/g, "");
-
-  while (cleaned.length % 4 !== 0) {
-    cleaned += "=";
-  }
-
-  var encTable =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  var len = cleaned.length;
-
-  var outputLen = (len / 4) * 3;
-  if (cleaned.endsWith("==")) outputLen -= 2;
-  else if (cleaned.endsWith("=")) outputLen -= 1;
-
-  var bytes = new Uint8Array(outputLen);
-  var p = 0;
-
-  for (var i = 0; i < len; i += 4) {
-    var c1 = encTable.indexOf(cleaned.charAt(i));
-    var c2 = encTable.indexOf(cleaned.charAt(i + 1));
-    var c3 = encTable.indexOf(cleaned.charAt(i + 2));
-    var c4 = encTable.indexOf(cleaned.charAt(i + 3));
-
-    var triple = (c1 << 18) | (c2 << 12) | ((c3 & 63) << 6) | (c4 & 63);
-
-    bytes[p++] = (triple >> 16) & 0xff;
-    if (cleaned.charAt(i + 2) !== "=") {
-      if (p < outputLen) bytes[p++] = (triple >> 8) & 0xff;
+  if (msg.type === "render-flutter-layout" || msg.type === "import-layout") {
+    var jsonText = msg.json || msg.data;
+    if (!jsonText) {
+      figma.notify("JSON 내용이 비어 있습니다.");
+      return;
     }
-    if (cleaned.charAt(i + 3) !== "=") {
-      if (p < outputLen) bytes[p++] = triple & 0xff;
-    }
-  }
 
-  return bytes;
-}
+    var root;
+    try {
+      root = JSON.parse(jsonText);
+    } catch (e) {
+      console.error("[FlutterPlugin] JSON parse error", e);
+      figma.notify("JSON 파싱에 실패했습니다.");
+      return;
+    }
+
+    renderWholeLayout(root)
+      .then(function () {
+        figma.notify("레이아웃 복원이 완료되었습니다.");
+      })
+      .catch(function (e) {
+        console.error("[FlutterPlugin] renderWholeLayout error", e);
+        var msgText = "Import failed";
+        if (e && e.message) msgText += ": " + e.message;
+        figma.notify(msgText);
+      });
+  }
+};
