@@ -1479,6 +1479,20 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       }
     }
 
+    // Flex 자식인 Padding → wrapper Frame 없이 투과 (gap 계산 보존)
+    if (childCount == 1 && singleChild != null && node.parent is RenderFlex) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
+        };
+        return childResult;
+      }
+    }
+
     // Padding + RenderDecoratedBox → margin 패턴 (Container(margin:...))
     // 투명 wrapper Frame(auto-layout + padding)으로 margin 표현
     // → 자식 요소 크기는 유지, wrapper의 padding이 margin 역할
@@ -1608,11 +1622,19 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
             marked = true;
           }
         }
+        if (ac.hasTightWidth && !ac.maxWidth.isFinite) {
+          cl['sizingH'] = 'FILL';
+          marked = true;
+        }
         if (ac.hasTightHeight && ac.maxHeight.isFinite) {
           if ((node.size.height - ac.maxHeight).abs() < 1.0) {
             cl['fixedHeight'] = true;
             marked = true;
           }
+        }
+        if (ac.hasTightHeight && !ac.maxHeight.isFinite) {
+          cl['sizingV'] = 'FILL';
+          marked = true;
         }
         if (cl['fixedWidth'] == true && cl['fixedHeight'] == true) {
           cl['fixedSize'] = true;
@@ -2734,6 +2756,33 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       'children': <Map<String, dynamic>>[],
     };
     children.insert(0, bgChild);
+  }
+
+  // ---------------------------------------------------
+  // Stack 단일 자식 투과 (RefreshIndicator 등: 0-sized overlay 제거 후 1개만 남음)
+  // ---------------------------------------------------
+  if (node is RenderStack &&
+      children.length == 1 &&
+      !hasVisual &&
+      !_hasVisualProps(visual)) {
+    final onlyChild = children.first;
+    // Stack이 부여한 FIXED sizing 제거 (불필요)
+    final cl = onlyChild['childLayout'] as Map<String, dynamic>? ?? {};
+    cl.remove('sizingH');
+    cl.remove('sizingV');
+    cl.remove('positioned');
+    if (cl.isEmpty) {
+      onlyChild.remove('childLayout');
+    } else {
+      onlyChild['childLayout'] = cl;
+    }
+    onlyChild['rect'] = {
+      'x': offset.dx,
+      'y': offset.dy,
+      'w': node.size.width,
+      'h': node.size.height,
+    };
+    return onlyChild;
   }
 
   // ---------------------------------------------------
