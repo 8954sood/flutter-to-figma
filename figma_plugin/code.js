@@ -435,6 +435,12 @@ function mergeWrapperChains(node) {
     if (curHasVisual && !outerHasFlexGrow && cp.mainAxisSize === "FIXED" &&
         (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
          cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) break;
+    // 정렬 컨테이너 보존 (visual 없어도): 현재 노드가 center/end이고 자식과 다르면 병합 중단
+    // (Align/Center 위젯 → 자식 Flex와 정렬이 다를 때 컨테이너 역할 유지)
+    if ((cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
+         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end") &&
+        (cp.mainAxisAlignment !== np.mainAxisAlignment ||
+         cp.crossAxisAlignment !== np.crossAxisAlignment)) break;
     // NONE 프레임의 암시적 패딩 계산: 유의미한 자식(Text, visual Frame) 좌표로 추출
     // (빈 STACK/artifact는 프레임 밖 좌표를 가질 수 있으므로 제외)
     // rotation이 있는 자식은 좌표가 회전 전 기준이므로 패딩 계산 스킵

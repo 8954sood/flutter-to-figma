@@ -1459,15 +1459,10 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     }
 
     // Flex 자식인 Padding → wrapper Frame 없이 투과 (gap 계산 보존)
+    // 자식의 자체 rect 유지 → recalcItemSpacing가 실제 시각 간격 계산
     if (childCount == 1 && singleChild != null && node.parent is RenderFlex) {
       final childResult = _crawl(singleChild);
       if (childResult != null) {
-        childResult['rect'] = {
-          'x': offset.dx,
-          'y': offset.dy,
-          'w': node.size.width,
-          'h': node.size.height,
-        };
         return childResult;
       }
     }
