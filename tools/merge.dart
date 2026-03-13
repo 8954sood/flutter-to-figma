@@ -39,15 +39,14 @@ String _mergeFragments(String dirPath, String glob) {
 
   final buffer = StringBuffer();
   for (var i = 0; i < files.length; i++) {
-    final content = files[i].readAsStringSync();
-    buffer.write(content);
-    // 파일이 개행으로 끝나지 않으면 개행 추가
-    if (content.isNotEmpty && !content.endsWith('\n')) {
+    final content = files[i].readAsStringSync().trimRight();
+    buffer.writeln(content);
+    // 모듈 경계에 빈 줄 삽입 (dart format 호환 — trailing blank line 불필요)
+    if (i < files.length - 1) {
       buffer.writeln();
     }
   }
-  // 파일 끝 trailing whitespace 정리 (dart format 호환)
-  return buffer.toString().trimRight() + '\n';
+  return buffer.toString();
 }
 
 void main() {
