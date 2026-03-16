@@ -911,6 +911,108 @@ void main() {
       expect(tfNode, isNotNull,
           reason: 'TextField should produce isTextField=true');
     });
+
+    testWidgets(
+        'Custom search field (Container+Padding+Row) preserves inner dimensions',
+        (tester) async {
+      // Simulates MeetingFilterField: Padding(16) → Container(bg,border,radius,padding) → Row(icon,text)
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.all(16),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Color(0xFFF8F8F8),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Color(0xFFE0E0E0)),
+                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                  child: Row(
+                    children: [
+                      Icon(Icons.search, size: 20, color: Color(0xFF666666)),
+                      SizedBox(width: 8),
+                      Text('필터 검색',
+                          style: TextStyle(
+                              color: Color(0xFF999999), fontSize: 14)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+
+      // Find the node with bg color #F8F8F8 (the filter container)
+      final filterNode = findNode(result, (n) {
+        final vis = n['visual'] as Map<String, dynamic>?;
+        if (vis == null) return false;
+        final bg = (vis['backgroundColor'] ?? '').toString().toLowerCase();
+        return bg.contains('f8f8f8');
+      });
+      expect(filterNode, isNotNull,
+          reason: 'Filter container with bg #F8F8F8 should exist');
+
+      // The filter node rect should be the INNER size (not inflated by parent padding)
+      final rect = filterNode!['rect'] as Map<String, dynamic>?;
+      final w = (rect?['w'] as num?)?.toDouble() ?? 0;
+      // Parent Column is full width (~800 in test), minus 32px (16*2) padding = ~768
+      // Filter field should NOT be full parent width
+      expect(w < 790, isTrue,
+          reason:
+              'Filter width ($w) should be inner size, not inflated by parent padding');
+
+      // Verify "필터 검색" text exists inside
+      final filterText = findNode(filterNode, (n) {
+        final vis = n['visual'] as Map<String, dynamic>?;
+        return n['type'] == 'Text' &&
+            vis != null &&
+            (vis['content'] ?? '').toString().contains('필터');
+      });
+      expect(filterText, isNotNull,
+          reason: 'Filter text should exist inside filter container');
+    });
+
+    testWidgets('Padded Container preserves border and borderRadius',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Padding(
+            padding: EdgeInsets.all(20),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Color(0xFFEEEEEE),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Color(0xFFCCCCCC), width: 2),
+              ),
+              padding: EdgeInsets.all(16),
+              child: Text('Content'),
+            ),
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+
+      final decoNode = findNode(result, (n) {
+        final vis = n['visual'] as Map<String, dynamic>?;
+        if (vis == null) return false;
+        return vis['backgroundColor'] != null &&
+            vis['backgroundColor'].toString().contains('eeeeee');
+      });
+      expect(decoNode, isNotNull);
+
+      // Border should be preserved
+      final vis = decoNode!['visual'] as Map<String, dynamic>;
+      expect(vis['border'], isNotNull,
+          reason: 'Border should be preserved after merge');
+      expect(vis['borderRadius'], isNotNull,
+          reason: 'BorderRadius should be preserved after merge');
+    });
   });
 
   // ============================================================

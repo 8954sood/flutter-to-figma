@@ -177,4 +177,153 @@ module.exports = [
       assert.strictEqual(result.rect.w, 300); // outer rect
     }
   },
+  // ============================================================
+  // Padding wrapper + decorated container (filter field pattern)
+  // ============================================================
+  {
+    name: "mergeWrapperChains: padding wrapper + visual child (size diff) — chain stopped, wrapper preserved",
+    fn: function() {
+      // Padding(16) wrapping Container(bg, border, radius, padding 9/13)
+      // outer rect: 411x70 (full parent), inner rect: 379x38 (actual content)
+      // Should NOT merge — padding wrapper stays as separate Frame
+      var tree = {
+        type: "Frame",
+        rect: { x: 0, y: 96, w: 411, h: 70 },
+        properties: { paddingTop: 16, paddingRight: 16, paddingBottom: 16, paddingLeft: 16 },
+        children: [{
+          type: "Frame",
+          rect: { x: 16, y: 96, w: 379, h: 38 },
+          properties: {
+            backgroundColor: "#FFF8F8F8",
+            borderRadius: 8,
+            hasBorder: true,
+            borderColor: "#FFE0E0E0",
+            borderWidth: 1,
+            paddingTop: 9, paddingRight: 13, paddingBottom: 9, paddingLeft: 13,
+            layoutMode: "HORIZONTAL",
+          },
+          children: [
+            { type: "Frame", rect: { x: 29, y: 105, w: 20, h: 20 }, properties: { isIconBox: true } },
+            { type: "Text", rect: { x: 57, y: 105, w: 53, h: 20 }, properties: { content: "Filter" } },
+          ]
+        }]
+      };
+      var result = P.mergeWrapperChains(tree);
+      // Wrapper preserved: result is the outer padding Frame
+      assert.strictEqual(result.rect.w, 411, "outer wrapper preserved");
+      assert.strictEqual(result.properties.paddingTop, 16, "outer padding preserved");
+      // Inner visual child is still a child, not merged
+      assert.strictEqual(result.children.length, 1);
+      var inner = result.children[0];
+      assert.strictEqual(inner.rect.w, 379, "inner container keeps its rect");
+      assert.strictEqual(inner.properties.backgroundColor, "#FFF8F8F8");
+      assert.strictEqual(inner.properties.paddingTop, 9, "inner padding not accumulated");
+    }
+  },
+  {
+    name: "mergeWrapperChains: same-size wrapper + visual child — absorb merge OK",
+    fn: function() {
+      // Wrapper and child have same size → absorb merge works
+      var tree = {
+        type: "Frame",
+        rect: { x: 0, y: 0, w: 200, h: 100 },
+        properties: { paddingTop: 5 },
+        children: [{
+          type: "Frame",
+          rect: { x: 0, y: 0, w: 200, h: 100 },
+          properties: { backgroundColor: "#FFFF0000", layoutMode: "VERTICAL" },
+          children: [{ type: "Text", rect: { x: 10, y: 10, w: 100, h: 20 }, properties: { content: "x" } }]
+        }]
+      };
+      var result = P.mergeWrapperChains(tree);
+      assert.strictEqual(result.rect.w, 200); // same size, outer rect OK
+      assert.strictEqual(result.properties.paddingTop, 5); // padding merged
+      assert.strictEqual(result.properties.backgroundColor, "#FFFF0000"); // visual absorbed
+    }
+  },
+  {
+    name: "pipeline: Padding(16) + Container(bg,border,radius) → wrapper preserved with padding",
+    fn: function() {
+      // Full pipeline test for the filter field pattern
+      var input = {
+        type: "Frame",
+        layoutMode: "COLUMN",
+        rect: { x: 0, y: 80, w: 411, h: 754 },
+        visual: {},
+        containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "start", mainAxisSize: "max" },
+        children: [
+          {
+            type: "Frame",
+            layoutMode: "COLUMN",
+            rect: { x: 0, y: 80, w: 411, h: 70 },
+            visual: {},
+            containerLayout: { padding: { top: 16, right: 16, bottom: 16, left: 16 } },
+            children: [{
+              type: "Frame",
+              layoutMode: "ROW",
+              rect: { x: 16, y: 96, w: 379, h: 38 },
+              visual: {
+                backgroundColor: "#FFF8F8F8",
+                borderRadius: 8,
+                border: { color: "#FFE0E0E0", width: 1 },
+              },
+              containerLayout: {
+                crossAxisAlignment: "center",
+                padding: { top: 9, right: 13, bottom: 9, left: 13 },
+              },
+              children: [
+                { type: "Frame", rect: { x: 29, y: 105, w: 20, h: 20 }, visual: { isIconBox: true }, containerLayout: {} },
+                { type: "Frame", rect: { x: 49, y: 115, w: 8, h: 0 }, visual: {}, containerLayout: {}, children: [] },
+                { type: "Text", rect: { x: 57, y: 105, w: 53, h: 20 }, visual: { content: "필터 검색", fontSize: 14, color: "#FF999999" }, containerLayout: {} },
+              ]
+            }]
+          },
+          {
+            type: "Frame",
+            layoutMode: "COLUMN",
+            rect: { x: 0, y: 150, w: 411, h: 600 },
+            visual: {},
+            containerLayout: { padding: { top: 8, right: 16, bottom: 0, left: 16 } },
+            children: [
+              { type: "Frame", rect: { x: 16, y: 158, w: 379, h: 106 }, layoutMode: "COLUMN",
+                visual: { backgroundColor: "#FFFFFFFF", border: { color: "#FFE0E0E0", width: 1 }, borderRadius: 12 },
+                containerLayout: { padding: { top: 17, right: 17, bottom: 17, left: 17 } },
+                children: [{ type: "Text", rect: { x: 33, y: 175, w: 86, h: 23 }, visual: { content: "Meeting 1" }, containerLayout: {} }]
+              },
+            ]
+          },
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+
+      // Find the filter field node (has backgroundColor #FFF8F8F8)
+      var filterNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).backgroundColor === "#fff8f8f8" ||
+               (n.properties || {}).backgroundColor === "#FFF8F8F8";
+      });
+      assert.notStrictEqual(filterNode, null, "Filter field should exist");
+
+      // Filter field should have inner dimensions (wrapper not merged)
+      var fw = (filterNode.rect || {}).w || 0;
+      assert.ok(fw < 400, "Filter width should be ~379 (inner), not 411 (outer). Got: " + fw);
+
+      // Padding should be the inner padding only (outer padding on wrapper)
+      var padL = filterNode.properties.paddingLeft || 0;
+      assert.ok(padL <= 16, "paddingLeft should be inner (13), not accumulated (29). Got: " + padL);
+
+      // Find the padding wrapper parent
+      var wrapperNode = helpers.findNode(result, function(n) {
+        var ch = n.children || [];
+        return ch.some(function(c) {
+          return (c.properties || {}).backgroundColor === "#fff8f8f8" ||
+                 (c.properties || {}).backgroundColor === "#FFF8F8F8";
+        });
+      });
+      if (wrapperNode) {
+        var wp = wrapperNode.properties || {};
+        assert.ok((wp.paddingTop || 0) > 0 || (wp.paddingLeft || 0) > 0,
+          "Wrapper should have padding (outer padding preserved)");
+      }
+    }
+  },
 ];

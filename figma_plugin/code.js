@@ -347,15 +347,12 @@ function flattenEmptyWrappers(node) {
   // 빈 프로퍼티 + 자식 1개 → 자식으로 대체
   if (children.length === 1) {
     var child = children[0];
-    // 바깥쪽 rect 유지 (바운딩 박스)
     if (!child.rect && node.rect) {
       child.rect = node.rect;
     }
-    // widgetName 전파
     if (node.widgetName && !child.widgetName) {
       child.widgetName = node.widgetName;
     }
-    // clipPath 전파
     if (node.clipPath && !child.clipPath) {
       child.clipPath = node.clipPath;
     }
@@ -367,16 +364,12 @@ function flattenEmptyWrappers(node) {
     var rect = node.rect || {};
     var w = rect.w || 0;
     var h = rect.h || 0;
-    // 고스트 래퍼 제거: 양축 모두 크거나, 양쪽 모두 0
-    // (한 축만 큰 경우는 stretch된 스페이서 → 유지)
     if ((w > 100 && h > 100) || (w < 1 && h < 1)) {
       return null;
     }
-    // 양쪽 다 작고 하나 이상 > 0 = 스페이서 → 유지
     return node;
   }
 
-  // 빈 프로퍼티 + 자식 여러개 → 유지, 레이아웃 추론 필요 표시
   node._needsLayoutInference = true;
   return node;
 }
@@ -387,10 +380,7 @@ function shouldStopChain(current, next, outerFlexGrow) {
   var np = next.properties || {};
   var cp = current.properties || {};
 
-  // widgetName이 있는 노드는 병합 중단
   if (next.widgetName) return true;
-
-  // rotation이 있는 노드는 병합 중단 (좌표계가 다름)
   if (np.rotation) return true;
 
   var nextHasVisual = np.backgroundColor || np.hasBorder || np.borderRadius ||
@@ -398,19 +388,28 @@ function shouldStopChain(current, next, outerFlexGrow) {
   var curHasVisual = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
       cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox;
 
-  // 센터링/끝정렬 컨테이너 보존 (visual 흡수보다 먼저 체크)
   if ((cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
        cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end") &&
       (cp.mainAxisAlignment !== np.mainAxisAlignment ||
        cp.crossAxisAlignment !== np.crossAxisAlignment)) return true;
 
   if (nextHasVisual) {
-    if (curHasVisual) return true; // 양쪽 다 visual → 병합 중단
-    // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
-    return "absorb"; // special: absorb then stop
+    if (curHasVisual) return true;
+
+    // outer가 padding 래퍼이고 inner(visual child)와 크기가 다르면 병합 중단
+    // Padding(16) + Container(bg,border,radius) 패턴: outer는 위치 결정, inner는 시각 요소
+    var curHasPadding = cp.paddingTop || cp.paddingRight || cp.paddingBottom || cp.paddingLeft;
+    if (curHasPadding && !curHasVisual) {
+      var curRect = current.rect || {};
+      var nextRect = next.rect || {};
+      var wDiff = (curRect.w || 0) - (nextRect.w || 0);
+      var hDiff = (curRect.h || 0) - (nextRect.h || 0);
+      if (wDiff > 4 || hDiff > 4) return true;
+    }
+
+    return "absorb";
   }
 
-  // 센터링/끝정렬 + visual 컨테이너 보존
   if (curHasVisual && !outerFlexGrow && cp.mainAxisSize === "FIXED" &&
       (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
        cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) return true;
@@ -421,7 +420,6 @@ function shouldStopChain(current, next, outerFlexGrow) {
 function calculateImplicitPadding(frame) {
   var np = frame.properties || {};
 
-  // rotation이 있는 자식은 좌표가 회전 전 기준이므로 패딩 계산 스킵
   var hasRotatedChild = false;
   if (frame.children) {
     for (var ri = 0; ri < frame.children.length; ri++) {
@@ -441,14 +439,13 @@ function calculateImplicitPadding(frame) {
 
   for (var ci = 0; ci < frame.children.length; ci++) {
     var cc = frame.children[ci];
-    // Text 노드 또는 visual이 있는 Frame만 고려
     if (cc.type === "Text") { /* ok */ }
     else if (cc.type === "Frame") {
       var ccp = cc.properties || {};
       var hasVis = ccp.backgroundColor || ccp.hasBorder || ccp.borderRadius ||
                    ccp.isIconBox || ccp.content;
       var hasCh = cc.children && cc.children.length > 0;
-      if (!hasVis && !hasCh) continue; // 빈 artifact → 스킵
+      if (!hasVis && !hasCh) continue;
     } else continue;
     var cr = cc.rect || {};
     var lx = (cr.x || 0) - nrx;
@@ -471,26 +468,21 @@ function calculateImplicitPadding(frame) {
 }
 
 function mergeChainIntoInnermost(chain) {
-  // 속성 병합
-  var merged = chain[chain.length - 1]; // 가장 안쪽 노드를 베이스로
+  var merged = chain[chain.length - 1];
   var mergedProps = Object.assign({}, merged.properties || {});
 
-  // 바깥에서 안쪽으로 순회하며 병합
   for (var i = 0; i < chain.length - 1; i++) {
     var outerProps = chain[i].properties || {};
     mergePropsInto(mergedProps, outerProps, i === 0);
   }
 
   merged.properties = mergedProps;
-  // rect: 바깥쪽 사용 (전체 바운딩 박스)
   merged.rect = chain[0].rect || merged.rect;
 
-  // widgetName: 바깥쪽 노드의 widgetName 전파
   if (chain[0].widgetName && !merged.widgetName) {
     merged.widgetName = chain[0].widgetName;
   }
 
-  // clipPath: 체인 중 clipPath를 가진 노드가 있으면 보존
   for (var ci = 0; ci < chain.length; ci++) {
     if (chain[ci].clipPath) {
       merged.clipPath = chain[ci].clipPath;
@@ -504,7 +496,6 @@ function mergeChainIntoInnermost(chain) {
 function mergeWrapperChains(node) {
   if (!node || typeof node !== "object") return node;
 
-  // 먼저 자식을 재귀적으로 처리
   if (node.children && node.children.length > 0) {
     for (var i = 0; i < node.children.length; i++) {
       node.children[i] = mergeWrapperChains(node.children[i]);
@@ -513,11 +504,9 @@ function mergeWrapperChains(node) {
 
   if (node.type !== "Frame") return node;
 
-  // Chip widgetName이 있는 노드는 mergeWrapperChains 스킵 → handleChip에서 처리
   if (node.widgetName === "Chip") return node;
   if ((node.properties || {}).layoutWrap) return node;
 
-  // 체인 수집: Frame + children.length===1 + child.type===Frame
   var chain = [node];
   var current = node;
   while (
@@ -533,13 +522,11 @@ function mergeWrapperChains(node) {
     if (stopResult === true) break;
 
     if (stopResult === "absorb") {
-      // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
       current = next;
       chain.push(current);
       break;
     }
 
-    // NONE 프레임의 암시적 패딩 계산
     var padding = calculateImplicitPadding(next);
     if (padding) {
       var np = next.properties || {};
@@ -565,7 +552,6 @@ function mergePropsInto(target, source, isOutermost) {
     var key = keys[i];
     var val = source[key];
 
-    // Visual (bg, border, radius): 안쪽 우선 (투명 제외)
     if (key === "backgroundColor") {
       if (!target[key] || isTransparent(target[key])) {
         if (!isTransparent(val)) target[key] = val;
@@ -582,14 +568,12 @@ function mergePropsInto(target, source, isOutermost) {
       continue;
     }
 
-    // Layout (layoutMode, alignment, spacing): 있는 곳에서 가져옴
     if (key === "layoutMode" || key === "mainAxisAlignment" || key === "crossAxisAlignment" ||
         key === "mainAxisSize" || key === "itemSpacing") {
       if (!(key in target)) target[key] = val;
       continue;
     }
 
-    // Padding: 있는 곳에서 가져옴 (중복 시 합산)
     if (key === "paddingTop" || key === "paddingRight" || key === "paddingBottom" || key === "paddingLeft") {
       if (key in target) {
         target[key] = (target[key] || 0) + (val || 0);
@@ -599,7 +583,6 @@ function mergePropsInto(target, source, isOutermost) {
       continue;
     }
 
-    // Sizing (sizingH, sizingV): 바깥쪽 우선 (부모가 지정한 sizing이 자식 내부 sizing보다 우선)
     if (key === "sizingH" || key === "sizingV") {
       if (isOutermost) {
         target[key] = val;
@@ -609,7 +592,6 @@ function mergePropsInto(target, source, isOutermost) {
       continue;
     }
 
-    // Flex (flexGrow, flexFit): 바깥쪽 우선
     if (key === "flexGrow" || key === "flexFit") {
       if (isOutermost) {
         target[key] = val;
@@ -619,7 +601,6 @@ function mergePropsInto(target, source, isOutermost) {
       continue;
     }
 
-    // 나머지: 없으면 가져옴
     if (!(key in target)) {
       target[key] = val;
     }
