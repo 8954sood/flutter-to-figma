@@ -26,10 +26,10 @@ Files are sorted by name and concatenated. JS function declarations are hoisted,
 | `_00_utils.js` | `parseFlutterColor`, `resolveFont`, `mapTextAlign`, `mapImageFit`, `mapBoxFitToScaleMode`, `mapMainAxisAlign`, `mapCrossAxisAlign`, `base64ToUint8Array` |
 | `_01_globals.js` | `figma.showUI(...)`, `var loadedFonts`, `var resolvedFonts` |
 | `_02_schema.js` | `normalizeSchemaV2` — Schema v2 → flat properties conversion |
-| `_03_flatten_merge.js` | `isEmptyProps`, `flattenEmptyWrappers`, `shouldStopChain`, `calculateImplicitPadding`, `mergeChainIntoInnermost`, `mergeWrapperChains`, `mergePropsInto` |
+| `_03_flatten_merge.js` | `isEmptyProps`, `flattenEmptyWrappers`, `shouldStopChain` (detects padding+visual size mismatch), `calculateImplicitPadding`, `mergeChainIntoInnermost`, `mergeWrapperChains`, `mergePropsInto` |
 | `_04_named_widgets.js` | `preprocessNamedWidgets`, `handleListTile` (`groupChildrenByXRange`, `buildGroupColumns`, `assignFlexGrowToWidest`), `handleChip` (`findDecoNode`, `findNoneFrame`, `filterChipChildren`, `calculateBoundingPadding`), `handleNavigationToolbar` (`classifyToolbarChildren`, `normalizeBackButton`, `detectCenterTitle`, `markTitleTruncation`, `markTitleCenter`, `getTitleFontMetrics`, `buildCenteredToolbar`, `buildLeftAlignedToolbar`), `handleBottomNavigationBar`, `applyAlignByLayoutDir` |
 | `_05_layout_inference.js` | `sortChildrenByAxis`, `isMonotonicallyIncreasing`, `inferMissingLayout` |
-| `_06_spacers_cleanup.js` | `isSpacer`, `mostCommonValue`, `convertSpacersToItemSpacing`, `isEmptyLeaf`, `convertEdgeEmptyFramesToPadding`, `capPaddingToRect`, `removeEmptyLeaves`, `recalcItemSpacing` |
+| `_06_spacers_cleanup.js` | `isSpacerProps`, `isSpacer` (ignores layout-only props), `mostCommonValue`, `convertSpacersToItemSpacing` (uniform pattern only), `isEmptyLeaf`, `convertEdgeEmptyFramesToPadding`, `capPaddingToRect`, `removeEmptyLeaves` (preserves spacer-sized Frames), `recalcItemSpacing` (removes spacer children, restores if itemSpacing=0) |
 | `_07_sizing.js` | `assignImageSizing`, `assignTextSizing`, `assignFrameSizing`, `applySizedBoxOverrides`, `propagateWrapFlags`, `assignSizingHints` — determines FILL/HUG/FIXED |
 | `_08_helpers.js` | `isTransparent`, `generateNodeName`, `parseBorderRadius` |
 | `_09_fonts.js` | `preloadFonts` — loads fonts via Figma API |
@@ -49,41 +49,56 @@ Files are sorted by name and concatenated. JS function declarations are hoisted,
 3. **Phase 2** (`_09`): `preloadFonts` — loads required fonts via Figma API
 4. **Phase 3** (`_10`–`_13`): `renderWholeLayout` → recursive `renderNode` → Figma node creation + property application
 
+## Preprocessing Notes
+
+### mergeWrapperChains (`_03`)
+- **Padding wrapper + visual child**: When outer has padding, inner has visual (bg/border/radius), and size difference > 4px → chain is **stopped** (not merged). The padding wrapper is preserved as a separate Frame. This handles the `Padding(16) + Container(decoration)` pattern correctly.
+- **Absorb**: When outer has no visual and inner has visual, inner is absorbed into the chain. Only applies when sizes are similar (difference ≤ 4px).
+
+### Spacer Handling (`_05`, `_06`)
+- **`inferMissingLayout`**: Does NOT add `layoutMode` to childless Frames (protects spacer recognition).
+- **`isSpacer`**: Ignores layout-only properties (`sizingH`, `sizingV`, `flexGrow`, `flexFit`, `alignSelf`, `layoutMode`) — these don't disqualify spacer detection.
+- **`convertSpacersToItemSpacing`**: Only converts when spacers exist between ALL adjacent non-spacer pairs (uniform pattern). If spacers exist between only some pairs (e.g., Row with flexGrow Spacer + SizedBox), spacers are preserved as children.
+- **`recalcItemSpacing`**: Temporarily removes spacer children, calculates gaps. If `itemSpacing > 0`, removal is finalized (margin gaps handle spacing). If `itemSpacing = 0`, spacers are restored (spacer Frames are the only spacing source).
+- **`removeEmptyLeaves`**: Preserves middle empty Frames with spacer dimensions (main axis ≤ 50px, cross axis ≤ 1px).
+
 ## Test
 
-전처리 파이프라인(`_03`~`_07`) unit + integration snapshot 테스트.
+Preprocessing pipeline (`_03`–`_07`) unit + integration snapshot tests.
 
 ```
 node figma_plugin/test/run.js
 ```
 
-- `src/_03~_07` 수정 후 반드시 테스트 실행
-- 스냅샷 갱신: `node figma_plugin/test/run.js --update`
-- 필터: `node figma_plugin/test/run.js --filter <pattern>`
+- Run after modifying `src/_03~_07`
+- Update snapshots: `node figma_plugin/test/run.js --update`
+- Filter: `node figma_plugin/test/run.js --filter <pattern>`
 
-### 구조
+### Structure
 
 ```
 test/
-  run.js                          # 테스트 러너 (Node.js 내장만 사용)
+  run.js                          # Test runner (Node.js built-ins only)
   helpers.js                      # loadPipeline, runPreprocess, deepEqual, findNode
   unit/
-    sizing.test.js                # assignImageSizing, assignTextSizing, ...
-    merge_wrapper.test.js         # shouldStopChain, calculateImplicitPadding, mergePropsInto, ...
+    utils.test.js                 # parseFlutterColor, isTransparent, mapTextAlign, parseBorderRadius, ...
+    flatten_merge.test.js         # normalizeSchemaV2, findDecoNode, handleBottomNavigationBar, ...
+    merge_wrapper.test.js         # shouldStopChain, calculateImplicitPadding, mergePropsInto, padding wrapper, ...
     named_widgets.test.js         # classifyToolbarChildren, normalizeBackButton, ...
-    spacers.test.js               # isSpacer, isEmptyLeaf, convertEdgeEmptyFramesToPadding, ...
+    spacers.test.js               # isSpacer, convertSpacersToItemSpacing, recalcItemSpacing, pipeline patterns
     layout_inference.test.js      # inferMissingLayout
+    sizing.test.js                # assignImageSizing, assignTextSizing, ...
   integration/
-    pipeline.test.js              # 전체 파이프라인 snapshot 테스트
-    fixtures/*.json               # 입력 JSON (8개)
-    snapshots/*.snap.json         # 기대 출력 (--update로 생성)
+    pipeline.test.js              # Full pipeline snapshot tests
+    fixtures/*.json               # Input JSON fixtures (11)
+    snapshots/*.snap.json         # Expected output (generate with --update)
 ```
 
-### 테스트 파일 작성 규칙
+### Writing Tests
 
-- 각 파일은 `module.exports = [{name, fn}]` 형식
-- `fn` 인자로 `{updateSnapshots}` 받음 (integration만 사용)
-- 외부 의존성 없음 — `assert`, `fs`, `path`만 사용
+- Each file exports `module.exports = [{name, fn}]`
+- `fn` receives `{updateSnapshots}` (used by integration tests only)
+- No external dependencies — only `assert`, `fs`, `path`
 
 ## Notes
 

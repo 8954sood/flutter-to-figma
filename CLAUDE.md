@@ -10,11 +10,11 @@ Sources are split into modules and merged into single files at build time.
 dart run tools/merge.dart
 ```
 
-This single command generates three outputs:
+This single command generates four outputs:
 1. `tools/crawler/_*.dart` → `tools/crawler_source.dart`
 2. `figma_plugin/src/_*.js` → `figma_plugin/code.js`
 3. `crawler_source.dart` + `export_figma_layout.dart` → `generated_export_figma_layout.dart`
-4. `crawler_source.dart` → `tools/test_flutter/lib/crawler_source.dart` (테스트용 복사)
+4. `crawler_source.dart` → `tools/test_flutter/lib/crawler_source.dart` (test copy)
 
 ## Code Editing Rules
 
@@ -37,52 +37,63 @@ tools/
   crawler/           # Dart crawler source modules (edit these)
   merge.dart         # Build script
   export_figma_layout.dart  # CLI skeleton (contains %%CRAWLER_SOURCE%% placeholder)
-  test_flutter/      # Flutter 크롤러 통합 테스트 패키지
+  test_flutter/      # Flutter crawler integration tests
 figma_plugin/
   src/               # JS plugin source modules (edit these)
+  test/              # Plugin preprocessing unit + integration tests
   manifest.json      # Figma plugin manifest
   ui.html            # Plugin UI
 ```
 
 ## Test
 
-Figma plugin 전처리 파이프라인에 대한 unit + integration snapshot 테스트가 있다.
+### Figma Plugin Tests (JS)
+
+Unit + integration snapshot tests for the preprocessing pipeline.
 
 ```
 node figma_plugin/test/run.js
 ```
 
-- **`figma_plugin/src/_03~_07` 수정 후 반드시 테스트 실행**하여 회귀 없는지 확인.
-- 스냅샷 갱신: `node figma_plugin/test/run.js --update`
-- 필터: `node figma_plugin/test/run.js --filter <pattern>`
+- **Run after modifying `figma_plugin/src/_03~_07`** to catch regressions.
+- Update snapshots: `node figma_plugin/test/run.js --update`
+- Filter: `node figma_plugin/test/run.js --filter <pattern>`
 
-### 크롤러 통합 테스트 (Flutter)
+### Flutter Crawler Tests (Dart)
 
-`tools/crawler/_*.dart` 수정 후 크롤러 출력을 검증한다.
+Integration tests that build widget trees and run the crawler.
 
 ```bash
 cd tools/test_flutter && flutter test
 ```
 
-- 스냅샷 갱신: `UPDATE_SNAPSHOTS=1 flutter test`
-- `pumpWidget`으로 위젯 트리 구성 → `figmaExtractorEntryPoint()` 호출 → JSON 구조 검증
+- Update snapshots: `UPDATE_SNAPSHOTS=1 flutter test`
+- Builds widget trees via `pumpWidget` → calls `figmaExtractorEntryPoint()` → verifies JSON structure
 
-### 전체 검증 순서
+### Verification by Change Type
 
-`figma_plugin/src/` 파일 수정 시:
+After modifying `figma_plugin/src/`:
 
 ```bash
-dart run tools/merge.dart        # 1. 빌드
-dart format .                    # 2. 포맷 (변경 없어야 함)
-node figma_plugin/test/run.js    # 3. Figma 플러그인 테스트
+dart run tools/merge.dart        # 1. Build
+dart format .                    # 2. Format (must produce no changes)
+node figma_plugin/test/run.js    # 3. Plugin tests
 ```
 
-`tools/crawler/_*.dart` 수정 시:
+After modifying `tools/crawler/_*.dart`:
 
 ```bash
-dart run tools/merge.dart                          # 1. 빌드 (Step D: 테스트용 복사 포함)
-dart format .                                      # 2. 포맷
-cd tools/test_flutter && flutter test && cd ../..  # 3. 크롤러 테스트
+dart run tools/merge.dart                          # 1. Build (includes Step D test copy)
+dart format .                                      # 2. Format
+cd tools/test_flutter && flutter test && cd ../..  # 3. Crawler tests
+```
+
+Full verification (both):
+
+```bash
+dart run tools/merge.dart && dart format .
+node figma_plugin/test/run.js
+cd tools/test_flutter && flutter test && cd ../..
 ```
 
 ## Test Project
