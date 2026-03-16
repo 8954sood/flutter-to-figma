@@ -63,118 +63,95 @@ function flattenEmptyWrappers(node) {
 }
 
 // --- 1.2 mergeWrapperChains ---
-function mergeWrapperChains(node) {
-  if (!node || typeof node !== "object") return node;
 
-  // 먼저 자식을 재귀적으로 처리
-  if (node.children && node.children.length > 0) {
-    for (var i = 0; i < node.children.length; i++) {
-      node.children[i] = mergeWrapperChains(node.children[i]);
+function shouldStopChain(current, next, outerFlexGrow) {
+  var np = next.properties || {};
+  var cp = current.properties || {};
+
+  // widgetName이 있는 노드는 병합 중단
+  if (next.widgetName) return true;
+
+  // rotation이 있는 노드는 병합 중단 (좌표계가 다름)
+  if (np.rotation) return true;
+
+  var nextHasVisual = np.backgroundColor || np.hasBorder || np.borderRadius ||
+      np.elevation || np.shadowColor || np.isIconBox || np.isSvgBox;
+  var curHasVisual = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
+      cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox;
+
+  // 센터링/끝정렬 컨테이너 보존 (visual 흡수보다 먼저 체크)
+  if ((cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
+       cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end") &&
+      (cp.mainAxisAlignment !== np.mainAxisAlignment ||
+       cp.crossAxisAlignment !== np.crossAxisAlignment)) return true;
+
+  if (nextHasVisual) {
+    if (curHasVisual) return true; // 양쪽 다 visual → 병합 중단
+    // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
+    return "absorb"; // special: absorb then stop
+  }
+
+  // 센터링/끝정렬 + visual 컨테이너 보존
+  if (curHasVisual && !outerFlexGrow && cp.mainAxisSize === "FIXED" &&
+      (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
+       cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) return true;
+
+  return false;
+}
+
+function calculateImplicitPadding(frame) {
+  var np = frame.properties || {};
+
+  // rotation이 있는 자식은 좌표가 회전 전 기준이므로 패딩 계산 스킵
+  var hasRotatedChild = false;
+  if (frame.children) {
+    for (var ri = 0; ri < frame.children.length; ri++) {
+      if ((frame.children[ri].properties || {}).rotation) { hasRotatedChild = true; break; }
     }
   }
 
-  if (node.type !== "Frame") return node;
-
-  // Chip widgetName이 있는 노드는 mergeWrapperChains 스킵 → handleChip에서 처리
-  if (node.widgetName === "Chip") return node;
-  if ((node.properties || {}).layoutWrap) return node;
-
-  // 체인 수집: Frame + children.length===1 + child.type===Frame
-  // visual 속성이 있는 노드에서 중단 (시각적 경계 보존)
-  var chain = [node];
-  var current = node;
-  while (
-    current.type === "Frame" &&
-    current.children &&
-    current.children.length === 1 &&
-    current.children[0].type === "Frame"
-  ) {
-    var next = current.children[0];
-    var np = next.properties || {};
-    var cp = current.properties || {};
-
-    // widgetName이 있는 노드는 병합 중단
-    if (next.widgetName) break;
-
-    // rotation이 있는 노드는 병합 중단 (좌표계가 다름)
-    if (np.rotation) break;
-
-    var nextHasVisual = np.backgroundColor || np.hasBorder || np.borderRadius ||
-        np.elevation || np.shadowColor || np.isIconBox || np.isSvgBox;
-    var curHasVisual = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
-        cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox;
-
-    // 센터링/끝정렬 컨테이너 보존 (visual 흡수보다 먼저 체크)
-    // 현재 노드가 center/end이고 자식과 정렬이 다르면 병합 중단
-    // (Center/Align 위젯이 자식을 감싸는 구조 보존)
-    if ((cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
-         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end") &&
-        (cp.mainAxisAlignment !== np.mainAxisAlignment ||
-         cp.crossAxisAlignment !== np.crossAxisAlignment)) break;
-
-    if (nextHasVisual) {
-      if (curHasVisual) break; // 양쪽 다 visual → 병합 중단
-      // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
-      current = next;
-      chain.push(current);
-      break;
-    }
-
-    // 센터링/끝정렬 + visual 컨테이너 보존
-    var outerHasFlexGrow = ((chain[0].properties || {}).flexGrow || 0) > 0;
-    if (curHasVisual && !outerHasFlexGrow && cp.mainAxisSize === "FIXED" &&
-        (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
-         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) break;
-    // NONE 프레임의 암시적 패딩 계산: 유의미한 자식(Text, visual Frame) 좌표로 추출
-    // (빈 STACK/artifact는 프레임 밖 좌표를 가질 수 있으므로 제외)
-    // rotation이 있는 자식은 좌표가 회전 전 기준이므로 패딩 계산 스킵
-    var hasRotatedChild = false;
-    if (next.children) {
-      for (var ri = 0; ri < next.children.length; ri++) {
-        if ((next.children[ri].properties || {}).rotation) { hasRotatedChild = true; break; }
-      }
-    }
-    if (!np.layoutMode && !hasRotatedChild && next.children && next.children.length > 0) {
-      var nRect = next.rect || {};
-      var nrx = nRect.x || 0, nry = nRect.y || 0;
-      var nrw = nRect.w || 0, nrh = nRect.h || 0;
-      var cMinX = Infinity, cMinY = Infinity, cMaxX = 0, cMaxY = 0;
-      var hasContent = false;
-      for (var ci = 0; ci < next.children.length; ci++) {
-        var cc = next.children[ci];
-        // Text 노드 또는 visual이 있는 Frame만 고려
-        if (cc.type === "Text") { /* ok */ }
-        else if (cc.type === "Frame") {
-          var ccp = cc.properties || {};
-          var hasVis = ccp.backgroundColor || ccp.hasBorder || ccp.borderRadius ||
-                       ccp.isIconBox || ccp.content;
-          var hasCh = cc.children && cc.children.length > 0;
-          if (!hasVis && !hasCh) continue; // 빈 artifact → 스킵
-        } else continue;
-        var cr = cc.rect || {};
-        var lx = (cr.x || 0) - nrx;
-        var ly = (cr.y || 0) - nry;
-        if (lx < cMinX) cMinX = lx;
-        if (ly < cMinY) cMinY = ly;
-        if (lx + (cr.w || 0) > cMaxX) cMaxX = lx + (cr.w || 0);
-        if (ly + (cr.h || 0) > cMaxY) cMaxY = ly + (cr.h || 0);
-        hasContent = true;
-      }
-      if (hasContent && cMinX !== Infinity) {
-        np.paddingTop = (np.paddingTop || 0) + Math.max(0, Math.round(cMinY));
-        np.paddingLeft = (np.paddingLeft || 0) + Math.max(0, Math.round(cMinX));
-        np.paddingBottom = (np.paddingBottom || 0) + Math.max(0, Math.round(nrh - cMaxY));
-        np.paddingRight = (np.paddingRight || 0) + Math.max(0, Math.round(nrw - cMaxX));
-        next.properties = np;
-      }
-    }
-
-    current = next;
-    chain.push(current);
+  if (np.layoutMode || hasRotatedChild || !frame.children || frame.children.length === 0) {
+    return null;
   }
 
-  if (chain.length < 2) return node;
+  var nRect = frame.rect || {};
+  var nrx = nRect.x || 0, nry = nRect.y || 0;
+  var nrw = nRect.w || 0, nrh = nRect.h || 0;
+  var cMinX = Infinity, cMinY = Infinity, cMaxX = 0, cMaxY = 0;
+  var hasContent = false;
 
+  for (var ci = 0; ci < frame.children.length; ci++) {
+    var cc = frame.children[ci];
+    // Text 노드 또는 visual이 있는 Frame만 고려
+    if (cc.type === "Text") { /* ok */ }
+    else if (cc.type === "Frame") {
+      var ccp = cc.properties || {};
+      var hasVis = ccp.backgroundColor || ccp.hasBorder || ccp.borderRadius ||
+                   ccp.isIconBox || ccp.content;
+      var hasCh = cc.children && cc.children.length > 0;
+      if (!hasVis && !hasCh) continue; // 빈 artifact → 스킵
+    } else continue;
+    var cr = cc.rect || {};
+    var lx = (cr.x || 0) - nrx;
+    var ly = (cr.y || 0) - nry;
+    if (lx < cMinX) cMinX = lx;
+    if (ly < cMinY) cMinY = ly;
+    if (lx + (cr.w || 0) > cMaxX) cMaxX = lx + (cr.w || 0);
+    if (ly + (cr.h || 0) > cMaxY) cMaxY = ly + (cr.h || 0);
+    hasContent = true;
+  }
+
+  if (!hasContent || cMinX === Infinity) return null;
+
+  return {
+    top: Math.max(0, Math.round(cMinY)),
+    left: Math.max(0, Math.round(cMinX)),
+    bottom: Math.max(0, Math.round(nrh - cMaxY)),
+    right: Math.max(0, Math.round(nrw - cMaxX))
+  };
+}
+
+function mergeChainIntoInnermost(chain) {
   // 속성 병합
   var merged = chain[chain.length - 1]; // 가장 안쪽 노드를 베이스로
   var mergedProps = Object.assign({}, merged.properties || {});
@@ -203,6 +180,64 @@ function mergeWrapperChains(node) {
   }
 
   return merged;
+}
+
+function mergeWrapperChains(node) {
+  if (!node || typeof node !== "object") return node;
+
+  // 먼저 자식을 재귀적으로 처리
+  if (node.children && node.children.length > 0) {
+    for (var i = 0; i < node.children.length; i++) {
+      node.children[i] = mergeWrapperChains(node.children[i]);
+    }
+  }
+
+  if (node.type !== "Frame") return node;
+
+  // Chip widgetName이 있는 노드는 mergeWrapperChains 스킵 → handleChip에서 처리
+  if (node.widgetName === "Chip") return node;
+  if ((node.properties || {}).layoutWrap) return node;
+
+  // 체인 수집: Frame + children.length===1 + child.type===Frame
+  var chain = [node];
+  var current = node;
+  while (
+    current.type === "Frame" &&
+    current.children &&
+    current.children.length === 1 &&
+    current.children[0].type === "Frame"
+  ) {
+    var next = current.children[0];
+    var outerFlexGrow = ((chain[0].properties || {}).flexGrow || 0) > 0;
+    var stopResult = shouldStopChain(current, next, outerFlexGrow);
+
+    if (stopResult === true) break;
+
+    if (stopResult === "absorb") {
+      // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
+      current = next;
+      chain.push(current);
+      break;
+    }
+
+    // NONE 프레임의 암시적 패딩 계산
+    var padding = calculateImplicitPadding(next);
+    if (padding) {
+      var np = next.properties || {};
+      np.paddingTop = (np.paddingTop || 0) + padding.top;
+      np.paddingLeft = (np.paddingLeft || 0) + padding.left;
+      np.paddingBottom = (np.paddingBottom || 0) + padding.bottom;
+      np.paddingRight = (np.paddingRight || 0) + padding.right;
+      next.properties = np;
+    }
+
+    current = next;
+    chain.push(current);
+  }
+
+  if (chain.length < 2) return node;
+
+  return mergeChainIntoInnermost(chain);
 }
 
 function mergePropsInto(target, source, isOutermost) {

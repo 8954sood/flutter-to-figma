@@ -41,6 +41,28 @@ figma_plugin/
   ui.html            # Plugin UI
 ```
 
+## Test
+
+Figma plugin 전처리 파이프라인에 대한 unit + integration snapshot 테스트가 있다.
+
+```
+node figma_plugin/test/run.js
+```
+
+- **`figma_plugin/src/_03~_07` 수정 후 반드시 테스트 실행**하여 회귀 없는지 확인.
+- 스냅샷 갱신: `node figma_plugin/test/run.js --update`
+- 필터: `node figma_plugin/test/run.js --filter <pattern>`
+
+### 전체 검증 순서
+
+`figma_plugin/src/` 파일 수정 시 아래 순서를 따른다:
+
+```bash
+dart run tools/merge.dart        # 1. 빌드
+dart format .                    # 2. 포맷 (변경 없어야 함)
+node figma_plugin/test/run.js    # 3. 테스트
+```
+
 ## Test Project
 
 `testsomething/` contains a test Flutter app. Do NOT modify its code.

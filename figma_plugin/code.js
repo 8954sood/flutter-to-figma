@@ -382,118 +382,95 @@ function flattenEmptyWrappers(node) {
 }
 
 // --- 1.2 mergeWrapperChains ---
-function mergeWrapperChains(node) {
-  if (!node || typeof node !== "object") return node;
 
-  // 먼저 자식을 재귀적으로 처리
-  if (node.children && node.children.length > 0) {
-    for (var i = 0; i < node.children.length; i++) {
-      node.children[i] = mergeWrapperChains(node.children[i]);
+function shouldStopChain(current, next, outerFlexGrow) {
+  var np = next.properties || {};
+  var cp = current.properties || {};
+
+  // widgetName이 있는 노드는 병합 중단
+  if (next.widgetName) return true;
+
+  // rotation이 있는 노드는 병합 중단 (좌표계가 다름)
+  if (np.rotation) return true;
+
+  var nextHasVisual = np.backgroundColor || np.hasBorder || np.borderRadius ||
+      np.elevation || np.shadowColor || np.isIconBox || np.isSvgBox;
+  var curHasVisual = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
+      cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox;
+
+  // 센터링/끝정렬 컨테이너 보존 (visual 흡수보다 먼저 체크)
+  if ((cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
+       cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end") &&
+      (cp.mainAxisAlignment !== np.mainAxisAlignment ||
+       cp.crossAxisAlignment !== np.crossAxisAlignment)) return true;
+
+  if (nextHasVisual) {
+    if (curHasVisual) return true; // 양쪽 다 visual → 병합 중단
+    // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
+    return "absorb"; // special: absorb then stop
+  }
+
+  // 센터링/끝정렬 + visual 컨테이너 보존
+  if (curHasVisual && !outerFlexGrow && cp.mainAxisSize === "FIXED" &&
+      (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
+       cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) return true;
+
+  return false;
+}
+
+function calculateImplicitPadding(frame) {
+  var np = frame.properties || {};
+
+  // rotation이 있는 자식은 좌표가 회전 전 기준이므로 패딩 계산 스킵
+  var hasRotatedChild = false;
+  if (frame.children) {
+    for (var ri = 0; ri < frame.children.length; ri++) {
+      if ((frame.children[ri].properties || {}).rotation) { hasRotatedChild = true; break; }
     }
   }
 
-  if (node.type !== "Frame") return node;
-
-  // Chip widgetName이 있는 노드는 mergeWrapperChains 스킵 → handleChip에서 처리
-  if (node.widgetName === "Chip") return node;
-  if ((node.properties || {}).layoutWrap) return node;
-
-  // 체인 수집: Frame + children.length===1 + child.type===Frame
-  // visual 속성이 있는 노드에서 중단 (시각적 경계 보존)
-  var chain = [node];
-  var current = node;
-  while (
-    current.type === "Frame" &&
-    current.children &&
-    current.children.length === 1 &&
-    current.children[0].type === "Frame"
-  ) {
-    var next = current.children[0];
-    var np = next.properties || {};
-    var cp = current.properties || {};
-
-    // widgetName이 있는 노드는 병합 중단
-    if (next.widgetName) break;
-
-    // rotation이 있는 노드는 병합 중단 (좌표계가 다름)
-    if (np.rotation) break;
-
-    var nextHasVisual = np.backgroundColor || np.hasBorder || np.borderRadius ||
-        np.elevation || np.shadowColor || np.isIconBox || np.isSvgBox;
-    var curHasVisual = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
-        cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox;
-
-    // 센터링/끝정렬 컨테이너 보존 (visual 흡수보다 먼저 체크)
-    // 현재 노드가 center/end이고 자식과 정렬이 다르면 병합 중단
-    // (Center/Align 위젯이 자식을 감싸는 구조 보존)
-    if ((cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
-         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end") &&
-        (cp.mainAxisAlignment !== np.mainAxisAlignment ||
-         cp.crossAxisAlignment !== np.crossAxisAlignment)) break;
-
-    if (nextHasVisual) {
-      if (curHasVisual) break; // 양쪽 다 visual → 병합 중단
-      // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
-      current = next;
-      chain.push(current);
-      break;
-    }
-
-    // 센터링/끝정렬 + visual 컨테이너 보존
-    var outerHasFlexGrow = ((chain[0].properties || {}).flexGrow || 0) > 0;
-    if (curHasVisual && !outerHasFlexGrow && cp.mainAxisSize === "FIXED" &&
-        (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
-         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) break;
-    // NONE 프레임의 암시적 패딩 계산: 유의미한 자식(Text, visual Frame) 좌표로 추출
-    // (빈 STACK/artifact는 프레임 밖 좌표를 가질 수 있으므로 제외)
-    // rotation이 있는 자식은 좌표가 회전 전 기준이므로 패딩 계산 스킵
-    var hasRotatedChild = false;
-    if (next.children) {
-      for (var ri = 0; ri < next.children.length; ri++) {
-        if ((next.children[ri].properties || {}).rotation) { hasRotatedChild = true; break; }
-      }
-    }
-    if (!np.layoutMode && !hasRotatedChild && next.children && next.children.length > 0) {
-      var nRect = next.rect || {};
-      var nrx = nRect.x || 0, nry = nRect.y || 0;
-      var nrw = nRect.w || 0, nrh = nRect.h || 0;
-      var cMinX = Infinity, cMinY = Infinity, cMaxX = 0, cMaxY = 0;
-      var hasContent = false;
-      for (var ci = 0; ci < next.children.length; ci++) {
-        var cc = next.children[ci];
-        // Text 노드 또는 visual이 있는 Frame만 고려
-        if (cc.type === "Text") { /* ok */ }
-        else if (cc.type === "Frame") {
-          var ccp = cc.properties || {};
-          var hasVis = ccp.backgroundColor || ccp.hasBorder || ccp.borderRadius ||
-                       ccp.isIconBox || ccp.content;
-          var hasCh = cc.children && cc.children.length > 0;
-          if (!hasVis && !hasCh) continue; // 빈 artifact → 스킵
-        } else continue;
-        var cr = cc.rect || {};
-        var lx = (cr.x || 0) - nrx;
-        var ly = (cr.y || 0) - nry;
-        if (lx < cMinX) cMinX = lx;
-        if (ly < cMinY) cMinY = ly;
-        if (lx + (cr.w || 0) > cMaxX) cMaxX = lx + (cr.w || 0);
-        if (ly + (cr.h || 0) > cMaxY) cMaxY = ly + (cr.h || 0);
-        hasContent = true;
-      }
-      if (hasContent && cMinX !== Infinity) {
-        np.paddingTop = (np.paddingTop || 0) + Math.max(0, Math.round(cMinY));
-        np.paddingLeft = (np.paddingLeft || 0) + Math.max(0, Math.round(cMinX));
-        np.paddingBottom = (np.paddingBottom || 0) + Math.max(0, Math.round(nrh - cMaxY));
-        np.paddingRight = (np.paddingRight || 0) + Math.max(0, Math.round(nrw - cMaxX));
-        next.properties = np;
-      }
-    }
-
-    current = next;
-    chain.push(current);
+  if (np.layoutMode || hasRotatedChild || !frame.children || frame.children.length === 0) {
+    return null;
   }
 
-  if (chain.length < 2) return node;
+  var nRect = frame.rect || {};
+  var nrx = nRect.x || 0, nry = nRect.y || 0;
+  var nrw = nRect.w || 0, nrh = nRect.h || 0;
+  var cMinX = Infinity, cMinY = Infinity, cMaxX = 0, cMaxY = 0;
+  var hasContent = false;
 
+  for (var ci = 0; ci < frame.children.length; ci++) {
+    var cc = frame.children[ci];
+    // Text 노드 또는 visual이 있는 Frame만 고려
+    if (cc.type === "Text") { /* ok */ }
+    else if (cc.type === "Frame") {
+      var ccp = cc.properties || {};
+      var hasVis = ccp.backgroundColor || ccp.hasBorder || ccp.borderRadius ||
+                   ccp.isIconBox || ccp.content;
+      var hasCh = cc.children && cc.children.length > 0;
+      if (!hasVis && !hasCh) continue; // 빈 artifact → 스킵
+    } else continue;
+    var cr = cc.rect || {};
+    var lx = (cr.x || 0) - nrx;
+    var ly = (cr.y || 0) - nry;
+    if (lx < cMinX) cMinX = lx;
+    if (ly < cMinY) cMinY = ly;
+    if (lx + (cr.w || 0) > cMaxX) cMaxX = lx + (cr.w || 0);
+    if (ly + (cr.h || 0) > cMaxY) cMaxY = ly + (cr.h || 0);
+    hasContent = true;
+  }
+
+  if (!hasContent || cMinX === Infinity) return null;
+
+  return {
+    top: Math.max(0, Math.round(cMinY)),
+    left: Math.max(0, Math.round(cMinX)),
+    bottom: Math.max(0, Math.round(nrh - cMaxY)),
+    right: Math.max(0, Math.round(nrw - cMaxX))
+  };
+}
+
+function mergeChainIntoInnermost(chain) {
   // 속성 병합
   var merged = chain[chain.length - 1]; // 가장 안쪽 노드를 베이스로
   var mergedProps = Object.assign({}, merged.properties || {});
@@ -522,6 +499,64 @@ function mergeWrapperChains(node) {
   }
 
   return merged;
+}
+
+function mergeWrapperChains(node) {
+  if (!node || typeof node !== "object") return node;
+
+  // 먼저 자식을 재귀적으로 처리
+  if (node.children && node.children.length > 0) {
+    for (var i = 0; i < node.children.length; i++) {
+      node.children[i] = mergeWrapperChains(node.children[i]);
+    }
+  }
+
+  if (node.type !== "Frame") return node;
+
+  // Chip widgetName이 있는 노드는 mergeWrapperChains 스킵 → handleChip에서 처리
+  if (node.widgetName === "Chip") return node;
+  if ((node.properties || {}).layoutWrap) return node;
+
+  // 체인 수집: Frame + children.length===1 + child.type===Frame
+  var chain = [node];
+  var current = node;
+  while (
+    current.type === "Frame" &&
+    current.children &&
+    current.children.length === 1 &&
+    current.children[0].type === "Frame"
+  ) {
+    var next = current.children[0];
+    var outerFlexGrow = ((chain[0].properties || {}).flexGrow || 0) > 0;
+    var stopResult = shouldStopChain(current, next, outerFlexGrow);
+
+    if (stopResult === true) break;
+
+    if (stopResult === "absorb") {
+      // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
+      current = next;
+      chain.push(current);
+      break;
+    }
+
+    // NONE 프레임의 암시적 패딩 계산
+    var padding = calculateImplicitPadding(next);
+    if (padding) {
+      var np = next.properties || {};
+      np.paddingTop = (np.paddingTop || 0) + padding.top;
+      np.paddingLeft = (np.paddingLeft || 0) + padding.left;
+      np.paddingBottom = (np.paddingBottom || 0) + padding.bottom;
+      np.paddingRight = (np.paddingRight || 0) + padding.right;
+      next.properties = np;
+    }
+
+    current = next;
+    chain.push(current);
+  }
+
+  if (chain.length < 2) return node;
+
+  return mergeChainIntoInnermost(chain);
 }
 
 function mergePropsInto(target, source, isOutermost) {
@@ -615,30 +650,9 @@ function preprocessNamedWidgets(node) {
   }
 }
 
-function handleListTile(node) {
-  // widgetName이 wrapper에 걸린 경우 → 실제 컨텐츠 노드까지 walk-down
-  var target = node;
-  while (target.children && target.children.length === 1 &&
-         target.children[0].type === "Frame") {
-    target = target.children[0];
-  }
+// --- ListTile helpers ---
 
-  var children = target.children || [];
-  if (children.length < 2) return;
-
-  var props = target.properties || {};
-
-  // ROW 레이아웃 강제 설정
-  props.layoutMode = "HORIZONTAL";
-  props.crossAxisAlignment = "center";
-  target.properties = props;
-
-  // x 좌표로 정렬
-  children.sort(function(a, b) {
-    return ((a.rect || {}).x || 0) - ((b.rect || {}).x || 0);
-  });
-
-  // 같은 x 범위의 자식들을 COLUMN으로 그룹핑 (title + subtitle 등)
+function groupChildrenByXRange(children) {
   var groups = [];
   var curGroup = [children[0]];
 
@@ -656,8 +670,10 @@ function handleListTile(node) {
     }
   }
   groups.push(curGroup);
+  return groups;
+}
 
-  // 각 그룹을 처리: 1개면 그대로, 2개 이상이면 COLUMN 래퍼 생성
+function buildGroupColumns(groups) {
   var newChildren = [];
   for (var g = 0; g < groups.length; g++) {
     if (groups[g].length === 1) {
@@ -692,41 +708,139 @@ function handleListTile(node) {
       });
     }
   }
+  return newChildren;
+}
 
-  target.children = newChildren;
-
-  // 가장 넓은 그룹(title/subtitle 영역)에 flexGrow 부여
+function assignFlexGrowToWidest(children) {
   var widestIdx = 0;
   var widestW = 0;
-  for (var i = 0; i < newChildren.length; i++) {
-    var cw = (newChildren[i].rect || {}).w || 0;
+  for (var i = 0; i < children.length; i++) {
+    var cw = (children[i].rect || {}).w || 0;
     if (cw > widestW) {
       widestW = cw;
       widestIdx = i;
     }
   }
 
-  var titleP = newChildren[widestIdx].properties || {};
+  var titleP = children[widestIdx].properties || {};
   titleP.flexGrow = 1;
   titleP.flexFit = "FlexFit.tight";
-  newChildren[widestIdx].properties = titleP;
+  children[widestIdx].properties = titleP;
+}
+
+function handleListTile(node) {
+  // widgetName이 wrapper에 걸린 경우 → 실제 컨텐츠 노드까지 walk-down
+  var target = node;
+  while (target.children && target.children.length === 1 &&
+         target.children[0].type === "Frame") {
+    target = target.children[0];
+  }
+
+  var children = target.children || [];
+  if (children.length < 2) return;
+
+  var props = target.properties || {};
+
+  // ROW 레이아웃 강제 설정
+  props.layoutMode = "HORIZONTAL";
+  props.crossAxisAlignment = "center";
+  target.properties = props;
+
+  // x 좌표로 정렬
+  children.sort(function(a, b) {
+    return ((a.rect || {}).x || 0) - ((b.rect || {}).x || 0);
+  });
+
+  // 같은 x 범위의 자식들을 COLUMN으로 그룹핑 (title + subtitle 등)
+  var groups = groupChildrenByXRange(children);
+  var newChildren = buildGroupColumns(groups);
+
+  target.children = newChildren;
+
+  // 가장 넓은 그룹(title/subtitle 영역)에 flexGrow 부여
+  assignFlexGrowToWidest(newChildren);
+}
+
+// --- Chip helpers ---
+
+function findDecoNode(node) {
+  var p = node.properties || {};
+  if (p.backgroundColor || p.hasBorder || p.borderRadius) return node;
+  var ch = node.children || [];
+  for (var i = 0; i < ch.length; i++) {
+    var found = findDecoNode(ch[i]);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findNoneFrame(node) {
+  var ch = node.children || [];
+  for (var i = 0; i < ch.length; i++) {
+    var cp = ch[i].properties || {};
+    if (ch[i].type === "Frame" && !cp.layoutMode && !cp.isStack) {
+      return ch[i];
+    }
+    var found = findNoneFrame(ch[i]);
+    if (found) return found;
+  }
+  return null;
+}
+
+function filterChipChildren(children) {
+  var newChildren = [];
+  for (var i = 0; i < children.length; i++) {
+    var c = children[i];
+    if (c.type === "Text") {
+      newChildren.push(c);
+    } else if (c.type === "Frame") {
+      var cp = c.properties || {};
+      // 비어 있는 STACK (clipsContent만 있고 자식 없음) → 제거
+      if ((cp.isStack || cp.layoutMode === "STACK") && (!c.children || c.children.length === 0)) {
+        continue;
+      }
+      // 비어 있는 Frame (visual 없고 자식 없음) → 제거
+      var hasVis = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
+                   cp.isIconBox || cp.content;
+      if (!hasVis && (!c.children || c.children.length === 0)) {
+        continue;
+      }
+      newChildren.push(c);
+    } else {
+      newChildren.push(c);
+    }
+  }
+  return newChildren;
+}
+
+function calculateBoundingPadding(children, containerRect) {
+  var nx = containerRect.x || 0, ny = containerRect.y || 0;
+  var nw = containerRect.w || 0, nh = containerRect.h || 0;
+
+  var cMinX = Infinity, cMinY = Infinity, cMaxX = 0, cMaxY = 0;
+  for (var i = 0; i < children.length; i++) {
+    var cr = children[i].rect || {};
+    var lx = (cr.x || 0) - nx;
+    var ly = (cr.y || 0) - ny;
+    var lw = cr.w || 0;
+    var lh = cr.h || 0;
+    if (lx < cMinX) cMinX = lx;
+    if (ly < cMinY) cMinY = ly;
+    if (lx + lw > cMaxX) cMaxX = lx + lw;
+    if (ly + lh > cMaxY) cMaxY = ly + lh;
+  }
+
+  return {
+    top: Math.max(0, Math.round(cMinY)),
+    left: Math.max(0, Math.round(cMinX)),
+    bottom: Math.max(0, Math.round(nh - cMaxY)),
+    right: Math.max(0, Math.round(nw - cMaxX))
+  };
 }
 
 function handleChip(node) {
   // Chip 구조: widgetName 노드 → ... → COLUMN(bg/border) → NONE(content) → [STACK, Text, STACK]
   // 목표: NONE 프레임을 HORIZONTAL로 변환하고, 좌표 기반 패딩 추출, 빈 STACK 제거
-
-  // walk-down: widgetName 노드에서 실제 bg/border가 있는 decoration 노드까지
-  function findDecoNode(n) {
-    var p = n.properties || {};
-    if (p.backgroundColor || p.hasBorder || p.borderRadius) return n;
-    var ch = n.children || [];
-    for (var i = 0; i < ch.length; i++) {
-      var found = findDecoNode(ch[i]);
-      if (found) return found;
-    }
-    return null;
-  }
 
   var decoNode = findDecoNode(node);
   if (!decoNode) {
@@ -750,25 +864,10 @@ function handleChip(node) {
   }
 
   // decoNode 내부에서 NONE 프레임(content holder) 찾기
-  // normalizeSchemaV2 이후: NONE → layoutMode 없음, STACK → isStack=true
-  function findNoneFrame(n) {
-    var ch = n.children || [];
-    for (var i = 0; i < ch.length; i++) {
-      var cp = ch[i].properties || {};
-      if (ch[i].type === "Frame" && !cp.layoutMode && !cp.isStack) {
-        return ch[i];
-      }
-      var found = findNoneFrame(ch[i]);
-      if (found) return found;
-    }
-    return null;
-  }
-
   var noneFrame = findNoneFrame(decoNode);
   if (!noneFrame) {
     console.log("[handleChip] noneFrame not found inside decoNode");
     // decoNode 자체가 NONE frame일 수도 있음 — mergeWrapperChains가 병합한 경우
-    // decoNode의 자식 중 Text/STACK이 직접 있으면 decoNode 자체를 처리
     var hasDirectText = false;
     for (var i = 0; i < decoChildren.length; i++) {
       if (decoChildren[i].type === "Text") { hasDirectText = true; break; }
@@ -782,80 +881,284 @@ function handleChip(node) {
   }
 
   var noneRect = noneFrame.rect || {};
-  var nx = noneRect.x || 0, ny = noneRect.y || 0;
-  var nw = noneRect.w || 0, nh = noneRect.h || 0;
 
   // 유의미한 자식만 남기고 STACK 아티팩트 제거
   var oldChildren = noneFrame.children || [];
-  var newChildren = [];
-  for (var i = 0; i < oldChildren.length; i++) {
-    var c = oldChildren[i];
-    if (c.type === "Text") {
-      newChildren.push(c);
-    } else if (c.type === "Frame") {
-      var cp = c.properties || {};
-      // 비어 있는 STACK (clipsContent만 있고 자식 없음) → 제거
-      // normalizeSchemaV2 이후: STACK → isStack=true, layoutMode 없음
-      if ((cp.isStack || cp.layoutMode === "STACK") && (!c.children || c.children.length === 0)) {
-        continue;
-      }
-      // 비어 있는 Frame (visual 없고 자식 없음) → 제거
-      var hasVis = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
-                   cp.isIconBox || cp.content;
-      if (!hasVis && (!c.children || c.children.length === 0)) {
-        continue;
-      }
-      newChildren.push(c);
-    } else {
-      newChildren.push(c);
-    }
-  }
+  var newChildren = filterChipChildren(oldChildren);
 
   // 남은 자식들의 bounding box로 패딩 계산
-  var cMinX = Infinity, cMinY = Infinity, cMaxX = 0, cMaxY = 0;
-  for (var i = 0; i < newChildren.length; i++) {
-    var cr = newChildren[i].rect || {};
-    var lx = (cr.x || 0) - nx;
-    var ly = (cr.y || 0) - ny;
-    var lw = cr.w || 0;
-    var lh = cr.h || 0;
-    if (lx < cMinX) cMinX = lx;
-    if (ly < cMinY) cMinY = ly;
-    if (lx + lw > cMaxX) cMaxX = lx + lw;
-    if (ly + lh > cMaxY) cMaxY = ly + lh;
-  }
-
-  var padTop = Math.max(0, Math.round(cMinY));
-  var padLeft = Math.max(0, Math.round(cMinX));
-  var padBottom = Math.max(0, Math.round(nh - cMaxY));
-  var padRight = Math.max(0, Math.round(nw - cMaxX));
+  var pad = calculateBoundingPadding(newChildren, noneRect);
 
   // NONE → HORIZONTAL 변환, 패딩 적용
   var np = noneFrame.properties || {};
   np.layoutMode = "HORIZONTAL";
   np.crossAxisAlignment = "center";
   np.mainAxisAlignment = "center";
-  np.paddingTop = padTop;
-  np.paddingBottom = padBottom;
-  np.paddingLeft = padLeft;
-  np.paddingRight = padRight;
+  np.paddingTop = pad.top;
+  np.paddingBottom = pad.bottom;
+  np.paddingLeft = pad.left;
+  np.paddingRight = pad.right;
   noneFrame.properties = np;
   noneFrame.children = newChildren;
 }
 
 // 자식 노드의 layoutMode에 따라 수평/수직 정렬 설정
-// hAlign: 수평 정렬 ("start"|"center"|"end")
-// vAlign: 수직 정렬 ("start"|"center"|"end")
 function applyAlignByLayoutDir(props, hAlign, vAlign) {
   if (props.layoutMode === "VERTICAL") {
-    // VERTICAL: main=수직, cross=수평
     props.mainAxisAlignment = vAlign;
     props.crossAxisAlignment = hAlign;
   } else {
-    // HORIZONTAL 또는 기타: main=수평, cross=수직
     props.mainAxisAlignment = hAlign;
     props.crossAxisAlignment = vAlign;
   }
+}
+
+// --- NavigationToolbar helpers ---
+
+function classifyToolbarChildren(children, toolbarRight) {
+  var leading = null, title = null, actions = null;
+
+  if (children.length >= 3) {
+    var sorted = children.slice().sort(function(a, b) {
+      return ((a.rect || {}).x || 0) - ((b.rect || {}).x || 0);
+    });
+    leading = sorted[0];
+    title = sorted[1];
+    actions = sorted[2];
+  } else if (children.length === 2) {
+    var r1 = children[1].rect || {};
+    var r1RightDist = toolbarRight - ((r1.x || 0) + (r1.w || 0));
+    if (r1RightDist < 80) {
+      title = children[0];
+      actions = children[1];
+    } else {
+      leading = children[0];
+      title = children[1];
+    }
+  } else {
+    title = children[0];
+  }
+
+  return { leading: leading, title: title, actions: actions };
+}
+
+function normalizeBackButton(node) {
+  if (!node) return false;
+  if (node.widgetName === "BackButton") {
+    var r = node.rect || {};
+    var w = r.w || 0, h = r.h || 0;
+    if (w !== 48) {
+      r.x = (r.x || 0) + (w - 48) / 2;
+      r.w = 48;
+    }
+    if (h !== 48) {
+      r.y = (r.y || 0) + (h - 48) / 2;
+      r.h = 48;
+    }
+    node.rect = r;
+    var p = node.properties || {};
+    p.fixedSize = true;
+    p.fixedWidth = true;
+    p.fixedHeight = true;
+    if (!p.layoutMode) p.layoutMode = "HORIZONTAL";
+    p.mainAxisAlignment = "center";
+    p.crossAxisAlignment = "center";
+    node.properties = p;
+    return true;
+  }
+  var ch = node.children || [];
+  for (var i = 0; i < ch.length; i++) {
+    if (normalizeBackButton(ch[i])) return true;
+  }
+  return false;
+}
+
+function detectCenterTitle(title, toolbarCenter, nodeW) {
+  if (!title) return false;
+  var tr = title.rect || {};
+  var titleCenter = (tr.x || 0) + (tr.w || 0) / 2;
+  return Math.abs(titleCenter - toolbarCenter) < nodeW * 0.15;
+}
+
+function markTitleTruncation(node) {
+  if (!node) return;
+  if (node.type === "Text") {
+    var p = node.properties || {};
+    p.textTruncate = "ENDING";
+    node.properties = p;
+    return;
+  }
+  var ch = node.children || [];
+  for (var i = 0; i < ch.length; i++) markTitleTruncation(ch[i]);
+}
+
+function markTitleCenter(node) {
+  if (!node) return;
+  if (node.type === "Text") {
+    var p = node.properties || {};
+    p.textAlign = "center";
+    p.textAlignVertical = "center";
+    node.properties = p;
+    return;
+  }
+  var ch = node.children || [];
+  for (var i = 0; i < ch.length; i++) markTitleCenter(ch[i]);
+}
+
+function getTitleFontMetrics(node) {
+  var fontSize = 16;
+  var lineHeightMultiplier = 1.4;
+
+  function findFontSize(n) {
+    if (!n) return;
+    if (n.type === "Text") {
+      var p = n.properties || {};
+      if (p.fontSize) fontSize = p.fontSize;
+      if (p.lineHeightMultiplier) lineHeightMultiplier = p.lineHeightMultiplier;
+      return;
+    }
+    var ch = n.children || [];
+    for (var i = 0; i < ch.length; i++) findFontSize(ch[i]);
+  }
+  findFontSize(node);
+
+  return { fontSize: fontSize, lineHeightMultiplier: lineHeightMultiplier };
+}
+
+function buildCenteredToolbar(node, props, leading, title, actions, nodeRect) {
+  var nodeX = nodeRect.x || 0;
+  var nodeW = nodeRect.w || 0;
+  var nodeY = nodeRect.y || 0;
+  var nodeH = nodeRect.h || 56;
+  var toolbarRight = nodeX + nodeW;
+
+  var padLeft = 0, padRight = 0;
+  if (leading) {
+    var lr = leading.rect || {};
+    padLeft = Math.max(0, Math.round((lr.x || 0) - nodeX));
+  }
+  if (actions) {
+    var ar = actions.rect || {};
+    padRight = Math.max(0, Math.round(toolbarRight - ((ar.x || 0) + (ar.w || 0))));
+  }
+
+  if (title) markTitleCenter(title);
+
+  // middle STACK 영역 계산
+  var leadEdge = padLeft + (leading ? ((leading.rect || {}).w || 0) : 0);
+  var actEdge = padRight + (actions ? ((actions.rect || {}).w || 0) : 0);
+  if (leading) leadEdge += 16;
+  if (actions) actEdge += 16;
+  var middleX = nodeX + leadEdge;
+  var middleW = nodeW - leadEdge - actEdge;
+
+  if (title) {
+    var toolbarCenterRel = nodeX + nodeW / 2;
+    var middleCenter = middleX + middleW / 2;
+    var offsetX = toolbarCenterRel - middleCenter;
+    var metrics = getTitleFontMetrics(title);
+    var singleLineH = Math.ceil(metrics.fontSize * metrics.lineHeightMultiplier);
+    var offsetY = nodeY + (nodeH - singleLineH) / 2;
+    title.rect = { x: middleX + offsetX, y: offsetY, w: middleW, h: singleLineH };
+  }
+
+  var middleStack = {
+    type: "Frame",
+    rect: { x: middleX, y: nodeY, w: middleW, h: nodeH },
+    properties: {
+      isStack: true,
+      clipsContent: true,
+      sizingH: "FILL",
+    },
+    children: title ? [title] : [],
+  };
+
+  var newChildren = [];
+  if (leading) {
+    newChildren.push(leading);
+    newChildren.push({
+      type: "Frame",
+      rect: { x: nodeX + padLeft + ((leading.rect || {}).w || 0), y: nodeY, w: 16, h: 1 },
+      properties: {},
+      children: [],
+    });
+  }
+  newChildren.push(middleStack);
+  if (actions) {
+    newChildren.push({
+      type: "Frame",
+      rect: { x: middleX + middleW, y: nodeY, w: 16, h: 1 },
+      properties: {},
+      children: [],
+    });
+    newChildren.push(actions);
+  }
+
+  props.paddingLeft = padLeft;
+  props.paddingRight = padRight;
+  props.itemSpacing = 0;
+  node.children = newChildren;
+  node.properties = props;
+}
+
+function buildLeftAlignedToolbar(node, props, leading, title, actions, nodeRect) {
+  var nodeX = nodeRect.x || 0;
+  var nodeW = nodeRect.w || 0;
+  var nodeY = nodeRect.y || 0;
+  var toolbarRight = nodeX + nodeW;
+
+  var newChildren = [];
+
+  if (leading) newChildren.push(leading);
+
+  if (leading && title) {
+    var leadR = leading.rect || {};
+    var spacerX = (leadR.x || 0) + (leadR.w || 0);
+    newChildren.push({
+      type: "Frame",
+      rect: { x: spacerX, y: nodeY, w: 16, h: 1 },
+      properties: {},
+      children: [],
+    });
+  }
+
+  if (title) newChildren.push(title);
+
+  if (title && actions) {
+    var tR = title.rect || {};
+    var spacerX2 = (tR.x || 0) + (tR.w || 0);
+    newChildren.push({
+      type: "Frame",
+      rect: { x: spacerX2, y: nodeY, w: 16, h: 1 },
+      properties: {},
+      children: [],
+    });
+  }
+
+  if (actions) newChildren.push(actions);
+
+  if (title) {
+    var tp = title.properties || {};
+    tp.sizingH = "FILL";
+    title.properties = tp;
+  }
+
+  if (leading) {
+    var firstR = leading.rect || {};
+    props.paddingLeft = Math.max(0, Math.round((firstR.x || 0) - nodeX));
+  } else if (title) {
+    var firstR2 = title.rect || {};
+    props.paddingLeft = Math.max(0, Math.round((firstR2.x || 0) - nodeX));
+  }
+  if (actions) {
+    var lastR = actions.rect || {};
+    props.paddingRight = Math.max(0, Math.round(toolbarRight - ((lastR.x || 0) + (lastR.w || 0))));
+  }
+
+  props.itemSpacing = 0;
+
+  node.children = newChildren;
+  node.properties = props;
 }
 
 function handleNavigationToolbar(node) {
@@ -870,271 +1173,26 @@ function handleNavigationToolbar(node) {
   var nodeRect = node.rect || {};
   var nodeX = nodeRect.x || 0;
   var nodeW = nodeRect.w || 0;
-  var nodeY = nodeRect.y || 0;
-  var nodeH = nodeRect.h || 56;
   var toolbarCenter = nodeX + nodeW / 2;
   var toolbarRight = nodeX + nodeW;
 
   if (children.length < 1) return;
 
-  // --- 자식을 leading / title / actions 로 분류 ---
-  var leading = null, title = null, actions = null;
+  var classified = classifyToolbarChildren(children, toolbarRight);
+  var leading = classified.leading;
+  var title = classified.title;
+  var actions = classified.actions;
 
-  if (children.length >= 3) {
-    // x 좌표로 정렬 → 좌측=leading, 중간=title, 우측=actions
-    var sorted = children.slice().sort(function(a, b) {
-      return ((a.rect || {}).x || 0) - ((b.rect || {}).x || 0);
-    });
-    leading = sorted[0];
-    title = sorted[1];
-    actions = sorted[2];
-  } else if (children.length === 2) {
-    // Flutter 크롤러 순서: [leading, middle] 또는 [middle, trailing]
-    // children[1]이 오른쪽 끝에 가까우면 → [middle, trailing]
-    var r1 = children[1].rect || {};
-    var r1RightDist = toolbarRight - ((r1.x || 0) + (r1.w || 0));
-    if (r1RightDist < 80) {
-      title = children[0];
-      actions = children[1];
-    } else {
-      leading = children[0];
-      title = children[1];
-    }
-  } else {
-    title = children[0];
-  }
-
-  // --- BackButton 48x48 정규화 ---
-  // AppBar가 leading을 56px ConstrainedBox로 감싸므로 rect가 56이 될 수 있음.
-  // 실제 BackButton 터치 타겟은 48x48, 내부 아이콘은 center/center.
-  function normalizeBackButton(n) {
-    if (!n) return false;
-    if (n.widgetName === "BackButton") {
-      var r = n.rect || {};
-      var w = r.w || 0, h = r.h || 0;
-      if (w !== 48) {
-        r.x = (r.x || 0) + (w - 48) / 2;
-        r.w = 48;
-      }
-      if (h !== 48) {
-        r.y = (r.y || 0) + (h - 48) / 2;
-        r.h = 48;
-      }
-      n.rect = r;
-      // FIXED 48x48 보장 (HUG 방지), center/center 정렬
-      var p = n.properties || {};
-      p.fixedSize = true;
-      p.fixedWidth = true;
-      p.fixedHeight = true;
-      if (!p.layoutMode) p.layoutMode = "HORIZONTAL";
-      p.mainAxisAlignment = "center";
-      p.crossAxisAlignment = "center";
-      n.properties = p;
-      return true;
-    }
-    var ch = n.children || [];
-    for (var i = 0; i < ch.length; i++) {
-      if (normalizeBackButton(ch[i])) return true;
-    }
-    return false;
-  }
   if (leading) normalizeBackButton(leading);
 
-  // --- centerTitle 감지: title 중심이 toolbar 중심 근처인지 ---
-  var isCentered = false;
-  if (title) {
-    var tr = title.rect || {};
-    var titleCenter = (tr.x || 0) + (tr.w || 0) / 2;
-    isCentered = Math.abs(titleCenter - toolbarCenter) < nodeW * 0.15;
-  }
+  var isCentered = detectCenterTitle(title, toolbarCenter, nodeW);
 
-  // title에 truncation 설정 (양방향 모두)
-  if (title) {
-    function markTitleTruncation(n) {
-      if (!n) return;
-      if (n.type === "Text") {
-        var p = n.properties || {};
-        p.textTruncate = "ENDING";
-        n.properties = p;
-        return;
-      }
-      var ch = n.children || [];
-      for (var i = 0; i < ch.length; i++) markTitleTruncation(ch[i]);
-    }
-    markTitleTruncation(title);
-  }
+  if (title) markTitleTruncation(title);
 
   if (isCentered) {
-    // --- centerTitle: true → STACK 방식으로 title 정중앙 배치 ---
-    // 구조: toolbar(HORIZONTAL) = [leading] + [spacer] + middleStack(FILL, STACK, clip) + [spacer] + [actions]
-    // middleStack 안에 title을 toolbar 전체 너비 rect로 배치 → textAlign center → 정중앙
-    // clipsContent로 leading/actions 영역 침범 방지
-
-    var padLeft = 0, padRight = 0;
-    if (leading) {
-      var lr = leading.rect || {};
-      padLeft = Math.max(0, Math.round((lr.x || 0) - nodeX));
-    }
-    if (actions) {
-      var ar = actions.rect || {};
-      padRight = Math.max(0, Math.round(toolbarRight - ((ar.x || 0) + (ar.w || 0))));
-    }
-
-    // title Text에 textAlign center + textAlignVertical center 설정
-    if (title) {
-      function markTitleCenter(n) {
-        if (!n) return;
-        if (n.type === "Text") {
-          var p = n.properties || {};
-          p.textAlign = "center";
-          p.textAlignVertical = "center";
-          n.properties = p;
-          return;
-        }
-        var ch = n.children || [];
-        for (var i = 0; i < ch.length; i++) markTitleCenter(ch[i]);
-      }
-      markTitleCenter(title);
-    }
-
-    // middle STACK 영역 계산
-    var leadEdge = padLeft + (leading ? ((leading.rect || {}).w || 0) : 0);
-    var actEdge = padRight + (actions ? ((actions.rect || {}).w || 0) : 0);
-    if (leading) leadEdge += 16; // spacer
-    if (actions) actEdge += 16; // spacer
-    var middleX = nodeX + leadEdge;
-    var middleW = nodeW - leadEdge - actEdge;
-
-    // title rect: width=middleW (truncation 발동), 위치를 offset하여 toolbar 정중앙
-    if (title) {
-      var toolbarCenterRel = nodeX + nodeW / 2;
-      var middleCenter = middleX + middleW / 2;
-      var offsetX = toolbarCenterRel - middleCenter;
-      // 수직 중앙: 렌더 시 텍스트 높이 = fontSize * lineHeightMultiplier
-      function getTitleFontSize(n) {
-        if (!n) return 16;
-        if (n.type === "Text") return (n.properties || {}).fontSize || 16;
-        var ch = n.children || [];
-        for (var i = 0; i < ch.length; i++) {
-          var f = getTitleFontSize(ch[i]);
-          if (f !== 16) return f;
-        }
-        return 16;
-      }
-      function getTitleLineHMul(n) {
-        if (!n) return 1.4;
-        if (n.type === "Text") return (n.properties || {}).lineHeightMultiplier || 1.4;
-        var ch = n.children || [];
-        for (var i = 0; i < ch.length; i++) {
-          var f = getTitleLineHMul(ch[i]);
-          if (f !== 1.4) return f;
-        }
-        return 1.4;
-      }
-      var titleFontSize = getTitleFontSize(title);
-      var titleLineHMul = getTitleLineHMul(title);
-      var singleLineH = Math.ceil(titleFontSize * titleLineHMul);
-      var offsetY = nodeY + (nodeH - singleLineH) / 2;
-      title.rect = { x: middleX + offsetX, y: offsetY, w: middleW, h: singleLineH };
-    }
-
-    var middleStack = {
-      type: "Frame",
-      rect: { x: middleX, y: nodeY, w: middleW, h: nodeH },
-      properties: {
-        isStack: true,
-        clipsContent: true,
-        sizingH: "FILL",
-      },
-      children: title ? [title] : [],
-    };
-
-    var newChildren = [];
-    if (leading) {
-      newChildren.push(leading);
-      newChildren.push({
-        type: "Frame",
-        rect: { x: nodeX + padLeft + ((leading.rect || {}).w || 0), y: nodeY, w: 16, h: 1 },
-        properties: {},
-        children: [],
-      });
-    }
-    newChildren.push(middleStack);
-    if (actions) {
-      newChildren.push({
-        type: "Frame",
-        rect: { x: middleX + middleW, y: nodeY, w: 16, h: 1 },
-        properties: {},
-        children: [],
-      });
-      newChildren.push(actions);
-    }
-
-    props.paddingLeft = padLeft;
-    props.paddingRight = padRight;
-    props.itemSpacing = 0;
-    node.children = newChildren;
-    node.properties = props;
+    buildCenteredToolbar(node, props, leading, title, actions, nodeRect);
   } else {
-    // --- centerTitle: false (기본값) → left-aligned ---
-    // Leading(FIXED) + [Spacer 16px] + Title(FILL, start) + Actions(FIXED)
-    var newChildren = [];
-
-    if (leading) newChildren.push(leading);
-
-    // leading과 title 사이: middleSpacing 16px spacer 삽입
-    if (leading && title) {
-      var leadR = leading.rect || {};
-      var titleR = title.rect || {};
-      var spacerX = (leadR.x || 0) + (leadR.w || 0);
-      newChildren.push({
-        type: "Frame",
-        rect: { x: spacerX, y: nodeY, w: 16, h: 1 },
-        properties: {},
-        children: [],
-      });
-    }
-
-    if (title) newChildren.push(title);
-
-    // title과 actions 사이: middleSpacing 16px spacer 삽입
-    if (title && actions) {
-      var tR = title.rect || {};
-      var spacerX2 = (tR.x || 0) + (tR.w || 0);
-      newChildren.push({
-        type: "Frame",
-        rect: { x: spacerX2, y: nodeY, w: 16, h: 1 },
-        properties: {},
-        children: [],
-      });
-    }
-
-    if (actions) newChildren.push(actions);
-
-    // Title → FILL (남은 공간 채움, 좌측 정렬)
-    if (title) {
-      var tp = title.properties || {};
-      tp.sizingH = "FILL";
-      title.properties = tp;
-    }
-
-    // Toolbar 패딩: 양쪽 가장자리 자식의 offset
-    if (leading) {
-      var firstR = leading.rect || {};
-      props.paddingLeft = Math.max(0, Math.round((firstR.x || 0) - nodeX));
-    } else if (title) {
-      var firstR2 = title.rect || {};
-      props.paddingLeft = Math.max(0, Math.round((firstR2.x || 0) - nodeX));
-    }
-    if (actions) {
-      var lastR = actions.rect || {};
-      props.paddingRight = Math.max(0, Math.round(toolbarRight - ((lastR.x || 0) + (lastR.w || 0))));
-    }
-
-    props.itemSpacing = 0;
-
-    node.children = newChildren;
-    node.properties = props;
+    buildLeftAlignedToolbar(node, props, leading, title, actions, nodeRect);
   }
 }
 
@@ -1142,13 +1200,11 @@ function handleBottomNavigationBar(node) {
   var children = node.children || [];
   var props = node.properties || {};
 
-  // ROW + spaceAround (normalizeSchemaV2 이후 flat properties)
   props.layoutMode = "HORIZONTAL";
   props.mainAxisAlignment = "spaceAround";
   props.crossAxisAlignment = "center";
   node.properties = props;
 
-  // 각 아이템 FILL + center
   for (var i = 0; i < children.length; i++) {
     var cp = children[i].properties || {};
     cp.flexGrow = 1;
@@ -1314,8 +1370,6 @@ function convertSpacersToItemSpacing(node) {
 }
 
 // --- 1.4.5 removeEmptyLeaves ---
-// convertSpacersToItemSpacing 후 남은 빈 leaf Frame 제거
-// 앞뒤 edge 빈 프레임은 padding으로 변환, 중간은 제거
 function isEmptyLeaf(c) {
   if (!c || c.type !== "Frame") return false;
   var cp = c.properties || {};
@@ -1328,25 +1382,7 @@ function isEmptyLeaf(c) {
   return true;
 }
 
-function removeEmptyLeaves(node) {
-  if (!node || typeof node !== "object") return;
-
-  var children = node.children || [];
-  for (var i = 0; i < children.length; i++) {
-    removeEmptyLeaves(children[i]);
-  }
-
-  var props = node.properties || {};
-  if (!props.layoutMode || props.layoutMode === "NONE") return;
-
-  // NavigationToolbar는 handleNavigationToolbar에서 spacer를 명시적으로 삽입했으므로 스킵
-  if (node.widgetName === "NavigationToolbar") return;
-
-  children = node.children || [];
-  if (children.length === 0) return;
-
-  var isVert = (props.layoutMode === "VERTICAL");
-
+function convertEdgeEmptyFramesToPadding(props, children, isVert) {
   // 앞쪽 edge 빈 프레임 → 패딩으로 변환
   while (children.length > 0 && isEmptyLeaf(children[0])) {
     var cr = children[0].rect || {};
@@ -1368,18 +1404,17 @@ function removeEmptyLeaves(node) {
     }
     children.pop();
   }
+}
 
-  // 중간 빈 leaf 제거
-  node.children = children.filter(function(c) { return !isEmptyLeaf(c); });
-
-  // 패딩 초과 방지: rect 높이/너비를 기준으로 캡핑
-  // content 자체가 rect를 초과하면 스킵 (ScrollView overflow 등)
+function capPaddingToRect(node, props, isVert) {
   var rectH = (node.rect || {}).h || 0;
   var rectW = (node.rect || {}).w || 0;
+  var children = node.children || [];
+
   if (isVert && rectH > 0) {
     var contentH = 0;
-    for (var i = 0; i < node.children.length; i++) {
-      contentH += ((node.children[i].rect || {}).h || 0);
+    for (var i = 0; i < children.length; i++) {
+      contentH += ((children[i].rect || {}).h || 0);
     }
     if (contentH <= rectH) {
       var totalPad = (props.paddingTop || 0) + (props.paddingBottom || 0);
@@ -1392,8 +1427,8 @@ function removeEmptyLeaves(node) {
     }
   } else if (!isVert && rectW > 0) {
     var contentW = 0;
-    for (var i = 0; i < node.children.length; i++) {
-      contentW += ((node.children[i].rect || {}).w || 0);
+    for (var i = 0; i < children.length; i++) {
+      contentW += ((children[i].rect || {}).w || 0);
     }
     if (contentW <= rectW) {
       var totalPad = (props.paddingLeft || 0) + (props.paddingRight || 0);
@@ -1405,6 +1440,34 @@ function removeEmptyLeaves(node) {
       }
     }
   }
+}
+
+function removeEmptyLeaves(node) {
+  if (!node || typeof node !== "object") return;
+
+  var children = node.children || [];
+  for (var i = 0; i < children.length; i++) {
+    removeEmptyLeaves(children[i]);
+  }
+
+  var props = node.properties || {};
+  if (!props.layoutMode || props.layoutMode === "NONE") return;
+
+  // NavigationToolbar는 handleNavigationToolbar에서 spacer를 명시적으로 삽입했으므로 스킵
+  if (node.widgetName === "NavigationToolbar") return;
+
+  children = node.children || [];
+  if (children.length === 0) return;
+
+  var isVert = (props.layoutMode === "VERTICAL");
+
+  convertEdgeEmptyFramesToPadding(props, children, isVert);
+
+  // 중간 빈 leaf 제거
+  node.children = children.filter(function(c) { return !isEmptyLeaf(c); });
+
+  // 패딩 초과 방지
+  capPaddingToRect(node, props, isVert);
 }
 
 // --- 1.5 recalcItemSpacing ---
@@ -1430,7 +1493,6 @@ function recalcItemSpacing(node) {
   // rect 좌표 기반 gap 계산
   var gaps = [];
   for (var i = 0; i < children.length - 1; i++) {
-    // flexGrow는 이제 FIXED 모드 → gap 계산에 포함
     var currProps = children[i].properties || {};
     var nextProps = children[i + 1].properties || {};
     var currRect = children[i].rect || {};
@@ -1443,7 +1505,6 @@ function recalcItemSpacing(node) {
       var currEnd = (currRect.y || 0) + (currRect.h || 0);
       gap = (nextRect.y || 0) - currEnd;
     }
-    // 음수 gap → 0 클램프
     gaps.push(Math.max(0, Math.round(gap)));
   }
 
@@ -1453,40 +1514,85 @@ function recalcItemSpacing(node) {
     return;
   }
 
-  // 최빈값(mode)으로 itemSpacing 결정
   props.itemSpacing = mostCommonValue(gaps);
   node.properties = props;
 }
 
 // --- 1.6 assignSizingHints ---
-function assignSizingHints(node, parentProps, parentNode) {
-  if (!node || typeof node !== "object") return;
 
+function assignImageSizing(node) {
+  node._sizingH = "FIXED";
+  node._sizingV = "FIXED";
+}
+
+function assignTextSizing(node, parentLayoutMode, crossIsStretch, parentIsAutoSize, parentNode, parentProps) {
   var props = node.properties || {};
-  var parentLayoutMode = parentProps ? parentProps.layoutMode : null;
-  var parentCross = parentProps ? (parentProps.crossAxisAlignment || "") : "";
-  var crossIsStretch = parentCross.indexOf("stretch") !== -1;
-  var parentMainAxisSize = parentProps ? (parentProps.mainAxisSize || "") : "";
-  var parentIsAutoSize = parentMainAxisSize === "AUTO" || parentMainAxisSize === "min";
 
-  // Image 노드: 항상 FIXED (래스터 이미지는 고정 크기)
-  if (node.type === "Image") {
-    node._sizingH = "FIXED";
-    node._sizingV = "FIXED";
-  } else if (node.type === "Text") {
-    node._sizingH = "HUG";
-    node._sizingV = "HUG";
+  node._sizingH = "HUG";
+  node._sizingV = "HUG";
 
-    // Text + flexGrow + tight → 주축 FILL
-    if (props.flexGrow > 0 && String(props.flexFit || "").indexOf("tight") !== -1) {
-      if (parentLayoutMode === "HORIZONTAL") {
-        node._sizingH = "FILL";
-      } else if (parentLayoutMode === "VERTICAL") {
-        node._sizingV = "FILL";
-      }
+  // Text + flexGrow + tight → 주축 FILL
+  if (props.flexGrow > 0 && String(props.flexFit || "").indexOf("tight") !== -1) {
+    if (parentLayoutMode === "HORIZONTAL") {
+      node._sizingH = "FILL";
+    } else if (parentLayoutMode === "VERTICAL") {
+      node._sizingV = "FILL";
+    }
+  }
+
+  // Text + 부모 cross=stretch → cross축 FILL
+  // 단, 부모가 mainAxisSize=AUTO (content 크기에 맞추는 컨테이너)면 스킵
+  if (crossIsStretch && !parentIsAutoSize) {
+    if (parentLayoutMode === "VERTICAL") {
+      node._sizingH = "FILL";
+    } else if (parentLayoutMode === "HORIZONTAL") {
+      node._sizingV = "FILL";
+    }
+  }
+
+  // 크롤러가 명시적으로 sizingH/sizingV를 설정한 경우 반영
+  if (props.sizingH === "FILL") node._sizingH = "FILL";
+  if (props.sizingV === "FILL") node._sizingV = "FILL";
+
+  // 여러 줄 Text가 부모 available width를 채우면 → FILL (Flutter에서 constrained wrap → Figma에서도 wrap)
+  // 단일 행 텍스트는 HUG 유지 (FILL로 바꾸면 Figma 폰트 메트릭 차이로 줄바꿈 발생)
+  if (node._sizingH === "HUG" && parentNode && parentNode.rect) {
+    var parentW = parentNode.rect.w || 0;
+    var parentPadL = parentProps ? (parentProps.paddingLeft || 0) : 0;
+    var parentPadR = parentProps ? (parentProps.paddingRight || 0) : 0;
+    var availW = parentW - parentPadL - parentPadR;
+    var textW = (node.rect || {}).w || 0;
+    var textH = (node.rect || {}).h || 0;
+    var fontSize = props.fontSize || 16;
+    var lineHMul = props.lineHeightMultiplier || 1.4;
+    var singleLineH = fontSize * lineHMul;
+    if (textW > 0 && availW > 0 && (textW - availW) >= -1 && textH > singleLineH * 1.5) {
+      node._sizingH = "FILL";
+    }
+  }
+}
+
+function assignFrameSizing(node, props, crossIsStretch, parentIsAutoSize, parentLayoutMode) {
+  node._sizingH = "FIXED";
+  node._sizingV = "FIXED";
+
+  // 고정 크기 요소: 항상 FIXED 유지
+  if (props.isIconBox || props.isSvgBox || props.isVectorCandidate || props.fixedSize) {
+    // skip — FIXED/FIXED 유지
+  } else {
+    var flexGrow = props.flexGrow || 0;
+    var flexFit = String(props.flexFit || "");
+    var isTight = flexFit.indexOf("tight") !== -1;
+    var mainAxisSize = props.mainAxisSize || "";
+    var isAutoSize = mainAxisSize === "AUTO" || mainAxisSize === "min";
+
+    // flexGrow > 0 → FIXED (Flutter가 계산한 rect 크기 사용, 비율 정확)
+    // Figma layoutGrow는 비율을 지원하지 않으므로 FIXED로 실제 크기 반영
+    if (flexGrow > 0) {
+      // FIXED 유지 — rect 크기가 그대로 적용됨
     }
 
-    // Text + 부모 cross=stretch → cross축 FILL
+    // 부모 cross=stretch → cross축 FILL
     // 단, 부모가 mainAxisSize=AUTO (content 크기에 맞추는 컨테이너)면 스킵
     if (crossIsStretch && !parentIsAutoSize) {
       if (parentLayoutMode === "VERTICAL") {
@@ -1496,89 +1602,36 @@ function assignSizingHints(node, parentProps, parentNode) {
       }
     }
 
-    // 크롤러가 명시적으로 sizingH/sizingV를 설정한 경우 반영
-    if (props.sizingH === "FILL") node._sizingH = "FILL";
-    if (props.sizingV === "FILL") node._sizingV = "FILL";
-
-    // 여러 줄 Text가 부모 available width를 채우면 → FILL (Flutter에서 constrained wrap → Figma에서도 wrap)
-    // 단일 행 텍스트는 HUG 유지 (FILL로 바꾸면 Figma 폰트 메트릭 차이로 줄바꿈 발생)
-    if (node._sizingH === "HUG" && parentNode && parentNode.rect) {
-      var parentW = parentNode.rect.w || 0;
-      var parentPadL = parentProps ? (parentProps.paddingLeft || 0) : 0;
-      var parentPadR = parentProps ? (parentProps.paddingRight || 0) : 0;
-      var availW = parentW - parentPadL - parentPadR;
-      var textW = (node.rect || {}).w || 0;
-      var textH = (node.rect || {}).h || 0;
-      var fontSize = props.fontSize || 16;
-      var lineHMul = props.lineHeightMultiplier || 1.4;
-      var singleLineH = fontSize * lineHMul;
-      if (textW > 0 && availW > 0 && (textW - availW) >= -1 && textH > singleLineH * 1.5) {
-        node._sizingH = "FILL";
-      }
-    }
-  } else if (node.type === "Frame") {
-    node._sizingH = "FIXED";
-    node._sizingV = "FIXED";
-
-    // 고정 크기 요소: 항상 FIXED 유지
-    if (props.isIconBox || props.isSvgBox || props.isVectorCandidate || props.fixedSize) {
-      // skip — FIXED/FIXED 유지
-    } else {
-      var flexGrow = props.flexGrow || 0;
-      var flexFit = String(props.flexFit || "");
-      var isTight = flexFit.indexOf("tight") !== -1;
-      var mainAxisSize = props.mainAxisSize || "";
-      var isAutoSize = mainAxisSize === "AUTO" || mainAxisSize === "min";
-
-      // flexGrow > 0 → FIXED (Flutter가 계산한 rect 크기 사용, 비율 정확)
-      // Figma layoutGrow는 비율을 지원하지 않으므로 FIXED로 실제 크기 반영
-      if (flexGrow > 0) {
-        // FIXED 유지 — rect 크기가 그대로 적용됨
-      }
-
-      // 부모 cross=stretch → cross축 FILL
-      // 단, 부모가 mainAxisSize=AUTO (content 크기에 맞추는 컨테이너)면 스킵
-      if (crossIsStretch && !parentIsAutoSize) {
-        if (parentLayoutMode === "VERTICAL") {
-          node._sizingH = "FILL";
-        } else if (parentLayoutMode === "HORIZONTAL") {
-          node._sizingV = "FILL";
-        }
-      }
-
-      // mainAxisSize=AUTO → 주축 HUG
-      // 단, flexGrow(Expanded/Flexible)로 FILL이 설정된 축은 유지
-      if (isAutoSize) {
-        if (props.layoutMode === "HORIZONTAL" && node._sizingH !== "FILL") {
-          node._sizingH = "HUG";
-        } else if (props.layoutMode === "VERTICAL" && node._sizingV !== "FILL") {
-          node._sizingV = "HUG";
-        }
-      }
-
-      // WRAP 레이아웃: 가로 FILL (부모 폭 채워야 줄바꿈 가능), 세로 HUG
-      if (props.layoutWrap) {
-        node._sizingH = "FILL";
+    // mainAxisSize=AUTO → 주축 HUG
+    // 단, flexGrow(Expanded/Flexible)로 FILL이 설정된 축은 유지
+    if (isAutoSize) {
+      if (props.layoutMode === "HORIZONTAL" && node._sizingH !== "FILL") {
+        node._sizingH = "HUG";
+      } else if (props.layoutMode === "VERTICAL" && node._sizingV !== "FILL") {
         node._sizingV = "HUG";
       }
     }
 
-    // 크롤러/전처리가 명시적으로 FILL을 설정한 경우 반영
-    if (props.sizingH === "FILL") node._sizingH = "FILL";
-    if (props.sizingV === "FILL") node._sizingV = "FILL";
+    // WRAP 레이아웃: 가로 FILL (부모 폭 채워야 줄바꿈 가능), 세로 HUG
+    if (props.layoutWrap) {
+      node._sizingH = "FILL";
+      node._sizingV = "HUG";
+    }
   }
 
+  // 크롤러/전처리가 명시적으로 FILL을 설정한 경우 반영
+  if (props.sizingH === "FILL") node._sizingH = "FILL";
+  if (props.sizingV === "FILL") node._sizingV = "FILL";
+}
+
+function applySizedBoxOverrides(node, props) {
   // SizedBox 단축 고정: fixedWidth/fixedHeight가 있으면 해당 축 FIXED
   // 단, 이미 FILL(Expanded/Flexible)이면 flex 우선 (AppBar leading 등)
   if (props.fixedWidth && node._sizingH !== "FILL") node._sizingH = "FIXED";
   if (props.fixedHeight && node._sizingV !== "FILL") node._sizingV = "FIXED";
+}
 
-  // 자식 재귀
-  var children = node.children || [];
-  for (var i = 0; i < children.length; i++) {
-    assignSizingHints(children[i], props, node);
-  }
-
+function propagateWrapFlags(node, props, children) {
   // Wrap 포함 여부 전파: 자식에 Wrap이 있거나 자손에 Wrap이 있으면 플래그 설정
   if (props.layoutWrap) {
     node._hasWrap = true;
@@ -1602,6 +1655,35 @@ function assignSizingHints(node, parentProps, parentNode) {
       }
     }
   }
+}
+
+function assignSizingHints(node, parentProps, parentNode) {
+  if (!node || typeof node !== "object") return;
+
+  var props = node.properties || {};
+  var parentLayoutMode = parentProps ? parentProps.layoutMode : null;
+  var parentCross = parentProps ? (parentProps.crossAxisAlignment || "") : "";
+  var crossIsStretch = parentCross.indexOf("stretch") !== -1;
+  var parentMainAxisSize = parentProps ? (parentProps.mainAxisSize || "") : "";
+  var parentIsAutoSize = parentMainAxisSize === "AUTO" || parentMainAxisSize === "min";
+
+  if (node.type === "Image") {
+    assignImageSizing(node);
+  } else if (node.type === "Text") {
+    assignTextSizing(node, parentLayoutMode, crossIsStretch, parentIsAutoSize, parentNode, parentProps);
+  } else if (node.type === "Frame") {
+    assignFrameSizing(node, props, crossIsStretch, parentIsAutoSize, parentLayoutMode);
+  }
+
+  applySizedBoxOverrides(node, props);
+
+  // 자식 재귀
+  var children = node.children || [];
+  for (var i = 0; i < children.length; i++) {
+    assignSizingHints(children[i], props, node);
+  }
+
+  propagateWrapFlags(node, props, children);
 }
 
 // ============================================================

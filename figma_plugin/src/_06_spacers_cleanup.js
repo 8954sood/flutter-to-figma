@@ -76,8 +76,6 @@ function convertSpacersToItemSpacing(node) {
 }
 
 // --- 1.4.5 removeEmptyLeaves ---
-// convertSpacersToItemSpacing 후 남은 빈 leaf Frame 제거
-// 앞뒤 edge 빈 프레임은 padding으로 변환, 중간은 제거
 function isEmptyLeaf(c) {
   if (!c || c.type !== "Frame") return false;
   var cp = c.properties || {};
@@ -90,25 +88,7 @@ function isEmptyLeaf(c) {
   return true;
 }
 
-function removeEmptyLeaves(node) {
-  if (!node || typeof node !== "object") return;
-
-  var children = node.children || [];
-  for (var i = 0; i < children.length; i++) {
-    removeEmptyLeaves(children[i]);
-  }
-
-  var props = node.properties || {};
-  if (!props.layoutMode || props.layoutMode === "NONE") return;
-
-  // NavigationToolbar는 handleNavigationToolbar에서 spacer를 명시적으로 삽입했으므로 스킵
-  if (node.widgetName === "NavigationToolbar") return;
-
-  children = node.children || [];
-  if (children.length === 0) return;
-
-  var isVert = (props.layoutMode === "VERTICAL");
-
+function convertEdgeEmptyFramesToPadding(props, children, isVert) {
   // 앞쪽 edge 빈 프레임 → 패딩으로 변환
   while (children.length > 0 && isEmptyLeaf(children[0])) {
     var cr = children[0].rect || {};
@@ -130,18 +110,17 @@ function removeEmptyLeaves(node) {
     }
     children.pop();
   }
+}
 
-  // 중간 빈 leaf 제거
-  node.children = children.filter(function(c) { return !isEmptyLeaf(c); });
-
-  // 패딩 초과 방지: rect 높이/너비를 기준으로 캡핑
-  // content 자체가 rect를 초과하면 스킵 (ScrollView overflow 등)
+function capPaddingToRect(node, props, isVert) {
   var rectH = (node.rect || {}).h || 0;
   var rectW = (node.rect || {}).w || 0;
+  var children = node.children || [];
+
   if (isVert && rectH > 0) {
     var contentH = 0;
-    for (var i = 0; i < node.children.length; i++) {
-      contentH += ((node.children[i].rect || {}).h || 0);
+    for (var i = 0; i < children.length; i++) {
+      contentH += ((children[i].rect || {}).h || 0);
     }
     if (contentH <= rectH) {
       var totalPad = (props.paddingTop || 0) + (props.paddingBottom || 0);
@@ -154,8 +133,8 @@ function removeEmptyLeaves(node) {
     }
   } else if (!isVert && rectW > 0) {
     var contentW = 0;
-    for (var i = 0; i < node.children.length; i++) {
-      contentW += ((node.children[i].rect || {}).w || 0);
+    for (var i = 0; i < children.length; i++) {
+      contentW += ((children[i].rect || {}).w || 0);
     }
     if (contentW <= rectW) {
       var totalPad = (props.paddingLeft || 0) + (props.paddingRight || 0);
@@ -167,6 +146,34 @@ function removeEmptyLeaves(node) {
       }
     }
   }
+}
+
+function removeEmptyLeaves(node) {
+  if (!node || typeof node !== "object") return;
+
+  var children = node.children || [];
+  for (var i = 0; i < children.length; i++) {
+    removeEmptyLeaves(children[i]);
+  }
+
+  var props = node.properties || {};
+  if (!props.layoutMode || props.layoutMode === "NONE") return;
+
+  // NavigationToolbar는 handleNavigationToolbar에서 spacer를 명시적으로 삽입했으므로 스킵
+  if (node.widgetName === "NavigationToolbar") return;
+
+  children = node.children || [];
+  if (children.length === 0) return;
+
+  var isVert = (props.layoutMode === "VERTICAL");
+
+  convertEdgeEmptyFramesToPadding(props, children, isVert);
+
+  // 중간 빈 leaf 제거
+  node.children = children.filter(function(c) { return !isEmptyLeaf(c); });
+
+  // 패딩 초과 방지
+  capPaddingToRect(node, props, isVert);
 }
 
 // --- 1.5 recalcItemSpacing ---
@@ -192,7 +199,6 @@ function recalcItemSpacing(node) {
   // rect 좌표 기반 gap 계산
   var gaps = [];
   for (var i = 0; i < children.length - 1; i++) {
-    // flexGrow는 이제 FIXED 모드 → gap 계산에 포함
     var currProps = children[i].properties || {};
     var nextProps = children[i + 1].properties || {};
     var currRect = children[i].rect || {};
@@ -205,7 +211,6 @@ function recalcItemSpacing(node) {
       var currEnd = (currRect.y || 0) + (currRect.h || 0);
       gap = (nextRect.y || 0) - currEnd;
     }
-    // 음수 gap → 0 클램프
     gaps.push(Math.max(0, Math.round(gap)));
   }
 
@@ -215,7 +220,6 @@ function recalcItemSpacing(node) {
     return;
   }
 
-  // 최빈값(mode)으로 itemSpacing 결정
   props.itemSpacing = mostCommonValue(gaps);
   node.properties = props;
 }
