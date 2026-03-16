@@ -48,6 +48,9 @@ function convertSpacersToItemSpacing(node) {
   // 이미 itemSpacing이 있으면 스킵
   if (typeof props.itemSpacing === "number" && props.itemSpacing > 0) return;
 
+  // NavigationToolbar는 handleNavigationToolbar에서 spacer를 명시적으로 삽입했으므로 스킵
+  if (node.widgetName === "NavigationToolbar") return;
+
   var spacerSizes = [];
   var spacerIndices = [];
 
@@ -95,6 +98,9 @@ function removeEmptyLeaves(node) {
 
   var props = node.properties || {};
   if (!props.layoutMode || props.layoutMode === "NONE") return;
+
+  // NavigationToolbar는 handleNavigationToolbar에서 spacer를 명시적으로 삽입했으므로 스킵
+  if (node.widgetName === "NavigationToolbar") return;
 
   children = node.children || [];
   if (children.length === 0) return;
@@ -172,6 +178,9 @@ function recalcItemSpacing(node) {
   var mode = props.layoutMode;
   if (!mode) return;
   if (children.length < 2) return;
+
+  // NavigationToolbar는 전처리에서 contiguous rect + itemSpacing=0 설정 완료
+  if (node.widgetName === "NavigationToolbar") return;
 
   // rect 좌표 기반 gap 계산
   var gaps = [];

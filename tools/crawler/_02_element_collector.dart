@@ -235,6 +235,7 @@ void _collectDesignInfoFromElements(Element element) {
     'ListTile',
     'CheckboxListTile',
     'RadioListTile',
+    'BackButton',
   };
   if (namedWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;

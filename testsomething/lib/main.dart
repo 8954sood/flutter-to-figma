@@ -4,6 +4,7 @@ import 'pages/finance_cards_page.dart';
 import 'pages/weather_landscape_page.dart';
 import 'pages/settings_panel_page.dart';
 import 'pages/widget_test_page.dart';
+import 'pages/appbar_test_page.dart';
 
 import 'figma_temp_crawler.dart';
 
@@ -50,6 +51,8 @@ class _MainShellState extends State<MainShell> {
         return const SettingsPanelPage();
       case 4:
         return const WidgetTestPage();
+      case 5:
+        return const AppBarTestPage();
       default:
         return const ProfileDashboardPage();
     }
@@ -80,6 +83,7 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.widgets),
             label: 'Widget Test',
           ),
+          BottomNavigationBarItem(icon: Icon(Icons.web_asset), label: 'AppBar'),
         ],
       ),
     );

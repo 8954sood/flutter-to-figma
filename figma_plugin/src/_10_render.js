@@ -104,6 +104,15 @@ function renderNode(node, parentFigma, parentLayoutDir) {
         figNode.textAutoResize = "TRUNCATE";
         figNode.textTruncation = "DISABLED";
       }
+      // textTruncate: "ENDING" → 말줄임표(…) 표시, 단일 행 높이로 제한
+      if (props.textTruncate === "ENDING") {
+        var fontSize = props.fontSize || 16;
+        var lineHMul = props.lineHeightMultiplier || 1.4;
+        var singleLineH = Math.ceil(fontSize * lineHMul);
+        figNode.resize(rw, singleLineH);
+        figNode.textAutoResize = "TRUNCATE";
+        figNode.textTruncation = "ENDING";
+      }
       // 세로 중앙 정렬 (FittedBox alignment 등)
       if (props.textAlignVertical === "center") {
         figNode.textAlignVertical = "CENTER";

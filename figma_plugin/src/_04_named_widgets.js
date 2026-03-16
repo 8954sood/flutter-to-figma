@@ -269,86 +269,279 @@ function handleNavigationToolbar(node) {
   var children = node.children || [];
   var props = node.properties || {};
 
-  // ROW 모드 보장 (normalizeSchemaV2 이후 flat properties)
   props.layoutMode = "HORIZONTAL";
-  props.mainAxisAlignment = "center";
+  props.crossAxisAlignment = "center";
+  props.itemSpacing = 0;
   node.properties = props;
 
   var nodeRect = node.rect || {};
+  var nodeX = nodeRect.x || 0;
+  var nodeW = nodeRect.w || 0;
+  var nodeY = nodeRect.y || 0;
   var nodeH = nodeRect.h || 56;
+  var toolbarCenter = nodeX + nodeW / 2;
+  var toolbarRight = nodeX + nodeW;
 
-  if (children.length === 3) {
-    var c0rect = children[0].rect || {};
-    var c2rect = children[2].rect || {};
+  if (children.length < 1) return;
 
-    // leading → 래퍼로 감싸서 FILL + left + vcenter
-    var leadWrapper = {
-      type: "Frame",
-      rect: { x: c0rect.x || 0, y: nodeRect.y || 0, w: c0rect.w || 0, h: nodeH },
-      properties: {
-        layoutMode: "HORIZONTAL",
-        mainAxisAlignment: "start",
-        crossAxisAlignment: "center",
-        flexGrow: 1,
-        flexFit: "FlexFit.tight",
-      },
-      children: [children[0]],
-    };
-    children[0] = leadWrapper;
+  // --- 자식을 leading / title / actions 로 분류 ---
+  var leading = null, title = null, actions = null;
 
-    // title → HUG
-    var titleP = children[1].properties || {};
-    titleP.flexGrow = 0;
-    delete titleP.flexFit;
-    children[1].properties = titleP;
-
-    // actions → 래퍼로 감싸서 FILL + right + vcenter
-    // 원래 actions 노드는 자연 크기 유지 (터치 영역 보존)
-    var actWrapper = {
-      type: "Frame",
-      rect: { x: c2rect.x || 0, y: nodeRect.y || 0, w: c2rect.w || 0, h: nodeH },
-      properties: {
-        layoutMode: "HORIZONTAL",
-        mainAxisAlignment: "end",
-        crossAxisAlignment: "center",
-        flexGrow: 1,
-        flexFit: "FlexFit.tight",
-      },
-      children: [children[2]],
-    };
-    children[2] = actWrapper;
+  if (children.length >= 3) {
+    // x 좌표로 정렬 → 좌측=leading, 중간=title, 우측=actions
+    var sorted = children.slice().sort(function(a, b) {
+      return ((a.rect || {}).x || 0) - ((b.rect || {}).x || 0);
+    });
+    leading = sorted[0];
+    title = sorted[1];
+    actions = sorted[2];
   } else if (children.length === 2) {
-    var c0r = children[0].rect || {};
-    var c1r = children[1].rect || {};
+    // Flutter 크롤러 순서: [leading, middle] 또는 [middle, trailing]
+    // children[1]이 오른쪽 끝에 가까우면 → [middle, trailing]
+    var r1 = children[1].rect || {};
+    var r1RightDist = toolbarRight - ((r1.x || 0) + (r1.w || 0));
+    if (r1RightDist < 80) {
+      title = children[0];
+      actions = children[1];
+    } else {
+      leading = children[0];
+      title = children[1];
+    }
+  } else {
+    title = children[0];
+  }
 
-    // 첫 자식 → FILL + left + vcenter (래퍼)
-    var wrap0 = {
+  // --- BackButton 48x48 정규화 ---
+  // AppBar가 leading을 56px ConstrainedBox로 감싸므로 rect가 56이 될 수 있음.
+  // 실제 BackButton 터치 타겟은 48x48, 내부 아이콘은 center/center.
+  function normalizeBackButton(n) {
+    if (!n) return false;
+    if (n.widgetName === "BackButton") {
+      var r = n.rect || {};
+      var w = r.w || 0, h = r.h || 0;
+      if (w !== 48) {
+        r.x = (r.x || 0) + (w - 48) / 2;
+        r.w = 48;
+      }
+      if (h !== 48) {
+        r.y = (r.y || 0) + (h - 48) / 2;
+        r.h = 48;
+      }
+      n.rect = r;
+      // FIXED 48x48 보장 (HUG 방지), center/center 정렬
+      var p = n.properties || {};
+      p.fixedSize = true;
+      p.fixedWidth = true;
+      p.fixedHeight = true;
+      if (!p.layoutMode) p.layoutMode = "HORIZONTAL";
+      p.mainAxisAlignment = "center";
+      p.crossAxisAlignment = "center";
+      n.properties = p;
+      return true;
+    }
+    var ch = n.children || [];
+    for (var i = 0; i < ch.length; i++) {
+      if (normalizeBackButton(ch[i])) return true;
+    }
+    return false;
+  }
+  if (leading) normalizeBackButton(leading);
+
+  // --- centerTitle 감지: title 중심이 toolbar 중심 근처인지 ---
+  var isCentered = false;
+  if (title) {
+    var tr = title.rect || {};
+    var titleCenter = (tr.x || 0) + (tr.w || 0) / 2;
+    isCentered = Math.abs(titleCenter - toolbarCenter) < nodeW * 0.15;
+  }
+
+  // title에 truncation 설정 (양방향 모두)
+  if (title) {
+    function markTitleTruncation(n) {
+      if (!n) return;
+      if (n.type === "Text") {
+        var p = n.properties || {};
+        p.textTruncate = "ENDING";
+        n.properties = p;
+        return;
+      }
+      var ch = n.children || [];
+      for (var i = 0; i < ch.length; i++) markTitleTruncation(ch[i]);
+    }
+    markTitleTruncation(title);
+  }
+
+  if (isCentered) {
+    // --- centerTitle: true → STACK 방식으로 title 정중앙 배치 ---
+    // 구조: toolbar(HORIZONTAL) = [leading] + [spacer] + middleStack(FILL, STACK, clip) + [spacer] + [actions]
+    // middleStack 안에 title을 toolbar 전체 너비 rect로 배치 → textAlign center → 정중앙
+    // clipsContent로 leading/actions 영역 침범 방지
+
+    var padLeft = 0, padRight = 0;
+    if (leading) {
+      var lr = leading.rect || {};
+      padLeft = Math.max(0, Math.round((lr.x || 0) - nodeX));
+    }
+    if (actions) {
+      var ar = actions.rect || {};
+      padRight = Math.max(0, Math.round(toolbarRight - ((ar.x || 0) + (ar.w || 0))));
+    }
+
+    // title Text에 textAlign center + textAlignVertical center 설정
+    if (title) {
+      function markTitleCenter(n) {
+        if (!n) return;
+        if (n.type === "Text") {
+          var p = n.properties || {};
+          p.textAlign = "center";
+          p.textAlignVertical = "center";
+          n.properties = p;
+          return;
+        }
+        var ch = n.children || [];
+        for (var i = 0; i < ch.length; i++) markTitleCenter(ch[i]);
+      }
+      markTitleCenter(title);
+    }
+
+    // middle STACK 영역 계산
+    var leadEdge = padLeft + (leading ? ((leading.rect || {}).w || 0) : 0);
+    var actEdge = padRight + (actions ? ((actions.rect || {}).w || 0) : 0);
+    if (leading) leadEdge += 16; // spacer
+    if (actions) actEdge += 16; // spacer
+    var middleX = nodeX + leadEdge;
+    var middleW = nodeW - leadEdge - actEdge;
+
+    // title rect: width=middleW (truncation 발동), 위치를 offset하여 toolbar 정중앙
+    if (title) {
+      var toolbarCenterRel = nodeX + nodeW / 2;
+      var middleCenter = middleX + middleW / 2;
+      var offsetX = toolbarCenterRel - middleCenter;
+      // 수직 중앙: 렌더 시 텍스트 높이 = fontSize * lineHeightMultiplier
+      function getTitleFontSize(n) {
+        if (!n) return 16;
+        if (n.type === "Text") return (n.properties || {}).fontSize || 16;
+        var ch = n.children || [];
+        for (var i = 0; i < ch.length; i++) {
+          var f = getTitleFontSize(ch[i]);
+          if (f !== 16) return f;
+        }
+        return 16;
+      }
+      function getTitleLineHMul(n) {
+        if (!n) return 1.4;
+        if (n.type === "Text") return (n.properties || {}).lineHeightMultiplier || 1.4;
+        var ch = n.children || [];
+        for (var i = 0; i < ch.length; i++) {
+          var f = getTitleLineHMul(ch[i]);
+          if (f !== 1.4) return f;
+        }
+        return 1.4;
+      }
+      var titleFontSize = getTitleFontSize(title);
+      var titleLineHMul = getTitleLineHMul(title);
+      var singleLineH = Math.ceil(titleFontSize * titleLineHMul);
+      var offsetY = nodeY + (nodeH - singleLineH) / 2;
+      title.rect = { x: middleX + offsetX, y: offsetY, w: middleW, h: singleLineH };
+    }
+
+    var middleStack = {
       type: "Frame",
-      rect: { x: c0r.x || 0, y: nodeRect.y || 0, w: c0r.w || 0, h: nodeH },
+      rect: { x: middleX, y: nodeY, w: middleW, h: nodeH },
       properties: {
-        layoutMode: "HORIZONTAL",
-        mainAxisAlignment: "start",
-        crossAxisAlignment: "center",
-        flexGrow: 1,
-        flexFit: "FlexFit.tight",
+        isStack: true,
+        clipsContent: true,
+        sizingH: "FILL",
       },
-      children: [children[0]],
+      children: title ? [title] : [],
     };
-    // 둘째 자식 → FILL + right + vcenter (래퍼)
-    var wrap1 = {
-      type: "Frame",
-      rect: { x: c1r.x || 0, y: nodeRect.y || 0, w: c1r.w || 0, h: nodeH },
-      properties: {
-        layoutMode: "HORIZONTAL",
-        mainAxisAlignment: "end",
-        crossAxisAlignment: "center",
-        flexGrow: 1,
-        flexFit: "FlexFit.tight",
-      },
-      children: [children[1]],
-    };
-    children[0] = wrap0;
-    children[1] = wrap1;
+
+    var newChildren = [];
+    if (leading) {
+      newChildren.push(leading);
+      newChildren.push({
+        type: "Frame",
+        rect: { x: nodeX + padLeft + ((leading.rect || {}).w || 0), y: nodeY, w: 16, h: 1 },
+        properties: {},
+        children: [],
+      });
+    }
+    newChildren.push(middleStack);
+    if (actions) {
+      newChildren.push({
+        type: "Frame",
+        rect: { x: middleX + middleW, y: nodeY, w: 16, h: 1 },
+        properties: {},
+        children: [],
+      });
+      newChildren.push(actions);
+    }
+
+    props.paddingLeft = padLeft;
+    props.paddingRight = padRight;
+    props.itemSpacing = 0;
+    node.children = newChildren;
+    node.properties = props;
+  } else {
+    // --- centerTitle: false (기본값) → left-aligned ---
+    // Leading(FIXED) + [Spacer 16px] + Title(FILL, start) + Actions(FIXED)
+    var newChildren = [];
+
+    if (leading) newChildren.push(leading);
+
+    // leading과 title 사이: middleSpacing 16px spacer 삽입
+    if (leading && title) {
+      var leadR = leading.rect || {};
+      var titleR = title.rect || {};
+      var spacerX = (leadR.x || 0) + (leadR.w || 0);
+      newChildren.push({
+        type: "Frame",
+        rect: { x: spacerX, y: nodeY, w: 16, h: 1 },
+        properties: {},
+        children: [],
+      });
+    }
+
+    if (title) newChildren.push(title);
+
+    // title과 actions 사이: middleSpacing 16px spacer 삽입
+    if (title && actions) {
+      var tR = title.rect || {};
+      var spacerX2 = (tR.x || 0) + (tR.w || 0);
+      newChildren.push({
+        type: "Frame",
+        rect: { x: spacerX2, y: nodeY, w: 16, h: 1 },
+        properties: {},
+        children: [],
+      });
+    }
+
+    if (actions) newChildren.push(actions);
+
+    // Title → FILL (남은 공간 채움, 좌측 정렬)
+    if (title) {
+      var tp = title.properties || {};
+      tp.sizingH = "FILL";
+      title.properties = tp;
+    }
+
+    // Toolbar 패딩: 양쪽 가장자리 자식의 offset
+    if (leading) {
+      var firstR = leading.rect || {};
+      props.paddingLeft = Math.max(0, Math.round((firstR.x || 0) - nodeX));
+    } else if (title) {
+      var firstR2 = title.rect || {};
+      props.paddingLeft = Math.max(0, Math.round((firstR2.x || 0) - nodeX));
+    }
+    if (actions) {
+      var lastR = actions.rect || {};
+      props.paddingRight = Math.max(0, Math.round(toolbarRight - ((lastR.x || 0) + (lastR.w || 0))));
+    }
+
+    props.itemSpacing = 0;
+
+    node.children = newChildren;
+    node.properties = props;
   }
 }
 

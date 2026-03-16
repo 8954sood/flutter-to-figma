@@ -81,6 +81,10 @@ function assignSizingHints(node, parentProps) {
         node._sizingV = "HUG";
       }
     }
+
+    // 크롤러/전처리가 명시적으로 sizingH/sizingV를 설정한 경우 반영
+    if (props.sizingH === "FILL") node._sizingH = "FILL";
+    if (props.sizingV === "FILL") node._sizingV = "FILL";
   }
 
   // SizedBox 단축 고정: fixedWidth/fixedHeight가 있으면 해당 축 FIXED
