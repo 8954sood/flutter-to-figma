@@ -1,7 +1,22 @@
 // --- 1.4 convertSpacersToItemSpacing ---
+// Layout-only keys that don't make a node non-empty for spacer detection
+var _spacerIgnoreKeys = {
+  "sizingH": true, "sizingV": true, "flexGrow": true,
+  "flexFit": true, "alignSelf": true, "layoutMode": true
+};
+
+function isSpacerProps(props) {
+  if (!props) return true;
+  var keys = Object.keys(props);
+  for (var i = 0; i < keys.length; i++) {
+    if (!_spacerIgnoreKeys[keys[i]]) return false;
+  }
+  return true;
+}
+
 function isSpacer(child, parentLayoutMode) {
   if (!child || child.type !== "Frame") return false;
-  if (!isEmptyProps(child.properties)) return false;
+  if (!isSpacerProps(child.properties)) return false;
   if (child.children && child.children.length > 0) return false;
 
   var rect = child.rect || {};
@@ -64,6 +79,31 @@ function convertSpacersToItemSpacing(node) {
   }
 
   if (spacerSizes.length === 0) return;
+
+  // 비-spacer 자식 수
+  var nonSpacerCount = children.length - spacerIndices.length;
+
+  // spacer → itemSpacing 변환 조건: 모든 인접 비-spacer 쌍 사이에 spacer가 있어야 함
+  // (일부만 spacer면 uniform itemSpacing 적용 시 gap 없는 쌍에도 spacing이 들어감)
+  var canConvert = false;
+  if (nonSpacerCount >= 2 && spacerSizes.length === nonSpacerCount - 1) {
+    // spacer가 모든 비-spacer 쌍 사이에 존재하는지 확인:
+    // 패턴이 [nonSpacer, spacer, nonSpacer, spacer, ...] 인지 검증
+    canConvert = true;
+    var spacerSet = {};
+    for (var si = 0; si < spacerIndices.length; si++) spacerSet[spacerIndices[si]] = true;
+    for (var i = 0; i < children.length - 1; i++) {
+      var curIsSpacer = !!spacerSet[i];
+      var nextIsSpacer = !!spacerSet[i + 1];
+      // 인접한 두 non-spacer가 spacer 없이 붙어 있으면 변환 불가
+      if (!curIsSpacer && !nextIsSpacer) {
+        canConvert = false;
+        break;
+      }
+    }
+  }
+
+  if (!canConvert) return;
 
   // 가장 빈번한 스페이서 크기 → itemSpacing
   props.itemSpacing = mostCommonValue(spacerSizes);
@@ -169,8 +209,17 @@ function removeEmptyLeaves(node) {
 
   convertEdgeEmptyFramesToPadding(props, children, isVert);
 
-  // 중간 빈 leaf 제거
-  node.children = children.filter(function(c) { return !isEmptyLeaf(c); });
+  // 중간 빈 leaf 제거 (spacer 역할의 Frame은 보존)
+  node.children = children.filter(function(c) {
+    if (!isEmptyLeaf(c)) return true;
+    // spacer 크기의 빈 Frame은 유지 (spacing 역할)
+    var cr = c.rect || {};
+    var w = cr.w || 0;
+    var h = cr.h || 0;
+    if (isVert && h > 0 && h <= 50 && w <= 1) return true;
+    if (!isVert && w > 0 && w <= 50 && h <= 1) return true;
+    return false;
+  });
 
   // 패딩 초과 방지
   capPaddingToRect(node, props, isVert);
@@ -196,11 +245,34 @@ function recalcItemSpacing(node) {
   // NavigationToolbar는 전처리에서 contiguous rect + itemSpacing=0 설정 완료
   if (node.widgetName === "NavigationToolbar") return;
 
+  // 남아있는 spacer child(isEmptyLeaf) 처리 전략:
+  // 1. spacer를 임시 제거하고 rect gap으로 itemSpacing 계산
+  // 2. itemSpacing > 0이면 제거 확정 (margin gap 등이 spacing을 담당)
+  // 3. itemSpacing = 0이면 spacer를 복원 (spacer Frame이 유일한 간격 수단)
+  var spacerBackup = []; // {index, child, padding info}
+  var isVert2 = (mode === "VERTICAL");
+  var savedPadTop = props.paddingTop, savedPadBot = props.paddingBottom;
+  var savedPadLeft = props.paddingLeft, savedPadRight = props.paddingRight;
+
+  for (var i = children.length - 1; i >= 0; i--) {
+    if (isEmptyLeaf(children[i])) {
+      var cr = children[i].rect || {};
+      var spacerSize = isVert2 ? (cr.h || 0) : (cr.w || 0);
+      spacerBackup.unshift({ index: i, child: children[i] });
+      if (i === 0) {
+        if (isVert2) props.paddingTop = (props.paddingTop || 0) + spacerSize;
+        else props.paddingLeft = (props.paddingLeft || 0) + spacerSize;
+      } else if (i === children.length - 1) {
+        if (isVert2) props.paddingBottom = (props.paddingBottom || 0) + spacerSize;
+        else props.paddingRight = (props.paddingRight || 0) + spacerSize;
+      }
+      children.splice(i, 1);
+    }
+  }
+
   // rect 좌표 기반 gap 계산
   var gaps = [];
   for (var i = 0; i < children.length - 1; i++) {
-    var currProps = children[i].properties || {};
-    var nextProps = children[i + 1].properties || {};
     var currRect = children[i].rect || {};
     var nextRect = children[i + 1].rect || {};
     var gap;
@@ -214,12 +286,24 @@ function recalcItemSpacing(node) {
     gaps.push(Math.max(0, Math.round(gap)));
   }
 
-  if (gaps.length === 0) {
-    props.itemSpacing = 0;
-    node.properties = props;
-    return;
-  }
+  var computed = gaps.length > 0 ? mostCommonValue(gaps) : 0;
 
-  props.itemSpacing = mostCommonValue(gaps);
-  node.properties = props;
+  if (computed > 0 || spacerBackup.length === 0) {
+    // 제거 확정: margin gap 등이 spacing을 담당
+    props.itemSpacing = computed;
+    node.children = children;
+    node.properties = props;
+  } else {
+    // spacer 복원: spacer Frame이 유일한 간격 수단
+    props.paddingTop = savedPadTop;
+    props.paddingBottom = savedPadBot;
+    props.paddingLeft = savedPadLeft;
+    props.paddingRight = savedPadRight;
+    for (var si = 0; si < spacerBackup.length; si++) {
+      children.splice(spacerBackup[si].index, 0, spacerBackup[si].child);
+    }
+    props.itemSpacing = 0;
+    node.children = children;
+    node.properties = props;
+  }
 }

@@ -67,9 +67,12 @@ function inferMissingLayout(node) {
     } else {
       node.children = ySorted;
     }
-  } else if (!props.layoutMode) {
-    // 자식 0~1개: VERTICAL 기본값
+  } else if (!props.layoutMode && children.length === 1) {
+    // 자식 1개: VERTICAL 기본값
     props.layoutMode = "VERTICAL";
     node.properties = props;
+  } else if (!props.layoutMode && children.length === 0) {
+    // 자식 0개 (spacer 등): 빈 Frame에는 layoutMode 추가하지 않음
+    // convertSpacersToItemSpacing에서 spacer로 인식 가능하도록
   }
 }

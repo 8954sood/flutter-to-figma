@@ -38,13 +38,28 @@ module.exports = [
     }
   },
   {
-    name: "inferMissingLayout: 0-1 children → VERTICAL default",
+    name: "inferMissingLayout: 0 children → no layoutMode (spacer-safe)",
     fn: function() {
       var node = {
         type: "Frame",
         rect: { x: 0, y: 0, w: 100, h: 100 },
         properties: {},
         children: []
+      };
+      P.inferMissingLayout(node);
+      assert.strictEqual(node.properties.layoutMode, undefined);
+    }
+  },
+  {
+    name: "inferMissingLayout: 1 child → VERTICAL default",
+    fn: function() {
+      var node = {
+        type: "Frame",
+        rect: { x: 0, y: 0, w: 100, h: 100 },
+        properties: {},
+        children: [
+          { type: "Text", rect: { x: 10, y: 10, w: 80, h: 20 }, properties: {} }
+        ]
       };
       P.inferMissingLayout(node);
       assert.strictEqual(node.properties.layoutMode, "VERTICAL");

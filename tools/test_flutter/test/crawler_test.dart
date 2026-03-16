@@ -1099,6 +1099,254 @@ void main() {
   });
 
   // ============================================================
+  // Spacer 패턴: SizedBox + flexGrow 혼합 (weather row)
+  // ============================================================
+
+  group('Spacer: weather row pattern', () {
+    testWidgets('SizedBox spacers in Row with flexGrow Spacer', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Row(
+            children: [
+              Text('Mon', style: TextStyle(color: Colors.white, fontSize: 15)),
+              Icon(Icons.wb_sunny, size: 22),
+              Spacer(),
+              Text('24°',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold)),
+              SizedBox(width: 8),
+              Container(
+                width: 80,
+                height: 4,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(2),
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF38EF7D), Color(0xFFFFD700)],
+                  ),
+                ),
+              ),
+              SizedBox(width: 8),
+              Text('16°',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontSize: 16)),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+
+      // Find the ROW with temperature texts
+      final row = findNode(result, (n) {
+        if (n['layoutMode'] != 'ROW') return false;
+        final ch = (n['children'] as List?) ?? [];
+        return ch.whereType<Map>().any((c) {
+          final vis = c['visual'] as Map? ?? {};
+          return (vis['content'] ?? '').toString().contains('24');
+        });
+      });
+      expect(row, isNotNull, reason: 'Should find weather ROW');
+
+      final children =
+          (row!['children'] as List).whereType<Map<String, dynamic>>().toList();
+
+      // SizedBox(w=8) spacers should appear in raw crawler output
+      // (preprocessing will remove them and set itemSpacing from rect gaps)
+      // Just verify the temperature texts and flexGrow Spacer exist
+      final temps = children.where((c) {
+        final vis = c['visual'] as Map? ?? {};
+        final content = (vis['content'] ?? '').toString();
+        return content.contains('24') || content.contains('16');
+      }).toList();
+      expect(temps.length, greaterThanOrEqualTo(2),
+          reason: 'Both temperature texts must be present');
+
+      // FlexGrow Spacer must be preserved
+      final flexNode = children.where((c) {
+        final childLay = c['childLayout'] as Map? ?? {};
+        return (childLay['flexGrow'] ?? 0) > 0;
+      }).toList();
+      expect(flexNode.length, greaterThanOrEqualTo(1),
+          reason: 'FlexGrow Spacer must be preserved in raw output');
+    });
+  });
+
+  // ============================================================
+  // Spacer 패턴: Container margin gap (finance column)
+  // ============================================================
+
+  group('Spacer: container margin gaps', () {
+    testWidgets('Container(margin) creates rect gap without SizedBox',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Section Title',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold)),
+              SizedBox(height: 16),
+              Container(
+                margin: EdgeInsets.only(bottom: 12),
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Color(0x14FFFFFF),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text('Card 1'),
+              ),
+              Container(
+                margin: EdgeInsets.only(bottom: 12),
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Color(0x14FFFFFF),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text('Card 2'),
+              ),
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Color(0x14FFFFFF),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text('Card 3'),
+              ),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+
+      // Find column with Section Title
+      final col = findNode(result, (n) {
+        final ch = (n['children'] as List?) ?? [];
+        return ch.whereType<Map>().any((c) {
+          final vis = c['visual'] as Map? ?? {};
+          return (vis['content'] ?? '').toString().contains('Section Title');
+        });
+      });
+      expect(col, isNotNull, reason: 'Should find section column');
+
+      final children =
+          (col!['children'] as List).whereType<Map<String, dynamic>>().toList();
+
+      // Cards should exist (Container with bg color)
+      final cards = children.where((c) {
+        final vis = c['visual'] as Map? ?? {};
+        return vis['backgroundColor'] != null;
+      }).toList();
+      expect(cards.length, greaterThanOrEqualTo(3),
+          reason: 'All 3 cards should be present');
+
+      // SizedBox(h=16) between title and first card should be in raw output
+      // (it may be preserved as Frame or absorbed by preprocessing)
+    });
+  });
+
+  // ============================================================
+  // Spacer 패턴: uniform SizedBox spacers
+  // ============================================================
+
+  group('Spacer: uniform SizedBox', () {
+    testWidgets('uniform SizedBox spacers between all items', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Row(
+            children: const [
+              Text('A'),
+              SizedBox(width: 12),
+              Text('B'),
+              SizedBox(width: 12),
+              Text('C'),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+
+      // Find the ROW with A,B,C
+      final row = findNode(result, (n) {
+        if (n['layoutMode'] != 'ROW') return false;
+        final ch = (n['children'] as List?) ?? [];
+        return ch.whereType<Map>().any((c) {
+          final vis = c['visual'] as Map? ?? {};
+          return vis['content'] == 'A';
+        });
+      });
+      expect(row, isNotNull);
+
+      final children =
+          (row!['children'] as List).whereType<Map<String, dynamic>>().toList();
+
+      // SizedBox spacers between all pairs → should have been removed
+      // (crawl output has them, but preprocessing may convert to rect gap)
+      final textCount =
+          children.where((c) => c['type'] == 'Text').toList().length;
+      expect(textCount, greaterThanOrEqualTo(3));
+    });
+  });
+
+  // ============================================================
+  // Spacer 패턴: SizedBox in Column
+  // ============================================================
+
+  group('Spacer: SizedBox in Column', () {
+    testWidgets('SizedBox(height) spacers preserved in raw output',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              Text('Header'),
+              SizedBox(height: 24),
+              Container(
+                  color: Color(0xFFFF0000),
+                  width: 200,
+                  height: 50,
+                  child: Text('Block')),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+
+      // The SizedBox(h=24) should appear as a Frame child in raw crawler output
+      final col = findNode(result, (n) {
+        final ch = (n['children'] as List?) ?? [];
+        return n['layoutMode'] == 'COLUMN' &&
+            ch.whereType<Map>().any((c) {
+              final vis = c['visual'] as Map? ?? {};
+              return vis['content'] == 'Header';
+            });
+      });
+      expect(col, isNotNull);
+
+      // Verify the spacer Frame exists in children
+      final children =
+          (col!['children'] as List).whereType<Map<String, dynamic>>().toList();
+      final spacerFrames = children.where((c) {
+        if (c['type'] != 'Frame') return false;
+        final rect = c['rect'] as Map?;
+        final h = (rect?['h'] as num?)?.toDouble() ?? 0;
+        final w = (rect?['w'] as num?)?.toDouble() ?? 999;
+        return h > 0 && h <= 50 && w <= 1;
+      }).toList();
+      expect(spacerFrames.length, greaterThanOrEqualTo(1),
+          reason: 'SizedBox(h=24) should appear as spacer Frame');
+    });
+  });
+
+  // ============================================================
   // 기존 스냅샷 테스트 (유지)
   // ============================================================
 
