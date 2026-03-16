@@ -1497,6 +1497,23 @@ function assignSizingHints(node, parentProps, parentNode) {
     // 크롤러가 명시적으로 sizingH/sizingV를 설정한 경우 반영
     if (props.sizingH === "FILL") node._sizingH = "FILL";
     if (props.sizingV === "FILL") node._sizingV = "FILL";
+
+    // 여러 줄 Text가 부모 available width를 채우면 → FILL (Flutter에서 constrained wrap → Figma에서도 wrap)
+    // 단일 행 텍스트는 HUG 유지 (FILL로 바꾸면 Figma 폰트 메트릭 차이로 줄바꿈 발생)
+    if (node._sizingH === "HUG" && parentNode && parentNode.rect) {
+      var parentW = parentNode.rect.w || 0;
+      var parentPadL = parentProps ? (parentProps.paddingLeft || 0) : 0;
+      var parentPadR = parentProps ? (parentProps.paddingRight || 0) : 0;
+      var availW = parentW - parentPadL - parentPadR;
+      var textW = (node.rect || {}).w || 0;
+      var textH = (node.rect || {}).h || 0;
+      var fontSize = props.fontSize || 16;
+      var lineHMul = props.lineHeightMultiplier || 1.4;
+      var singleLineH = fontSize * lineHMul;
+      if (textW > 0 && availW > 0 && (textW - availW) >= -1 && textH > singleLineH * 1.5) {
+        node._sizingH = "FILL";
+      }
+    }
   } else if (node.type === "Frame") {
     node._sizingH = "FIXED";
     node._sizingV = "FIXED";
@@ -1571,11 +1588,16 @@ function assignSizingHints(node, parentProps, parentNode) {
     }
     if (hasWrapDescendant) {
       node._hasWrap = true; // 상위로 전파
-      // Wrap이 가로 방향이므로:
-      // - 가로(H): FILL 유지/설정 (Wrap이 부모 폭을 채워야 줄바꿈 동작)
-      // - 세로(V): HUG (Wrap 줄바꿈에 맞춰 높이 조절)
-      if (node._sizingH !== "FILL") node._sizingH = "FILL";
-      node._sizingV = "HUG";
+      // Wrap 줄바꿈을 위해 조상 sizing 조정:
+      // H: FIXED → FILL (Wrap이 부모 폭을 채워야 줄바꿈 동작)
+      // V: FIXED → HUG (Wrap 줄바꿈에 맞춰 높이 조절)
+      // FILL은 유지 (부모 공간 내에서 동작, overflow 방지)
+      if (node._sizingH === "FIXED") {
+        node._sizingH = "FILL";
+      }
+      if (node._sizingV === "FIXED") {
+        node._sizingV = "HUG";
+      }
     }
   }
 }
