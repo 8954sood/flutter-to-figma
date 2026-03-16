@@ -85,6 +85,8 @@ function isEmptyLeaf(c) {
       cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox ||
       cp.isTextField || cp.isDivider || cp.gradient || cp.backgroundBlur) return false;
   if (c.children && c.children.length > 0) return false;
+  // flexGrow가 있는 Spacer는 레이아웃에서 남은 공간을 채우므로 제거하면 안 됨
+  if (cp.flexGrow > 0) return false;
   return true;
 }
 

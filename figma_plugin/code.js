@@ -1323,6 +1323,8 @@ function isEmptyLeaf(c) {
       cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox ||
       cp.isTextField || cp.isDivider || cp.gradient || cp.backgroundBlur) return false;
   if (c.children && c.children.length > 0) return false;
+  // flexGrow가 있는 Spacer는 레이아웃에서 남은 공간을 채우므로 제거하면 안 됨
+  if (cp.flexGrow > 0) return false;
   return true;
 }
 
@@ -2017,9 +2019,15 @@ function renderNode(node, parentFigma, parentLayoutDir) {
       var lhm = props.lineHeightMultiplier || 1.4;
       var slh = Math.ceil(fs * lhm);
       figNode.resize(rw, slh);
-      try { figNode.layoutSizingVertical = "FIXED"; } catch(e) {}
+      // TRUNCATE 설정 (sizing 전에 — TRUNCATE가 sizing을 리셋할 수 있으므로)
       figNode.textAutoResize = "TRUNCATE";
       figNode.textTruncation = truncType;
+      // sizing 복원 (TRUNCATE가 양축 FIXED로 리셋하므로)
+      try { figNode.layoutSizingVertical = "FIXED"; } catch(e) {}
+      try {
+        var intendedH = node._sizingH || "FIXED";
+        if (intendedH === "FILL") figNode.layoutSizingHorizontal = "FILL";
+      } catch(e) {}
     }
   }
 
