@@ -4,6 +4,7 @@
 // Step A: tools/crawler/_*.dart → tools/crawler_source.dart
 // Step B: figma_plugin/src/_*.js → figma_plugin/code.js
 // Step C: crawler_source.dart + export_figma_layout.dart → generated_export_figma_layout.dart
+// Step D: crawler_source.dart → test_flutter/lib/crawler_source.dart
 //
 // 순수 Dart CLI (외부 패키지 없음)
 //
@@ -128,4 +129,18 @@ void main() {
   // 출력
   File(outputPath).writeAsStringSync(output);
   print('Step C: Generated $outputPath');
+
+  // ── Step D: crawler_source.dart → test_flutter/lib/crawler_source.dart ──
+  final testFlutterLibDir = '$scriptDir/test_flutter/lib';
+  if (Directory(testFlutterLibDir).existsSync()) {
+    final testCrawlerPath = '$testFlutterLibDir/crawler_source.dart';
+    File(
+      testCrawlerPath,
+    ).writeAsStringSync(File(crawlerOutputPath).readAsStringSync());
+    print('Step D: Copied $testCrawlerPath');
+  } else {
+    stderr.writeln(
+      'WARNING: $testFlutterLibDir not found — skipping Step D (test crawler copy).',
+    );
+  }
 }

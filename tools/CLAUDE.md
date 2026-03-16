@@ -9,14 +9,16 @@ Must be embedded as a single file at runtime, so sources are split into `crawler
 
 ### Editable
 
-- **`merge.dart`** — Build script. Step A (Dart merge) → Step B (JS merge) → Step C (crawler embedding).
+- **`merge.dart`** — Build script. Step A (Dart merge) → Step B (JS merge) → Step C (crawler embedding) → Step D (test copy).
 - **`export_figma_layout.dart`** — CLI skeleton. Contains `%%CRAWLER_SOURCE%%` placeholder, which merge.dart replaces with the crawler source.
 - **`crawler/`** — Crawler source modules (see below).
+- **`test_flutter/`** — Flutter 크롤러 통합 테스트 패키지 (see below).
 
 ### Generated (Do NOT Edit)
 
 - `crawler_source.dart` — Merged output of `crawler/_*.dart`
 - `generated_export_figma_layout.dart` — Final executable
+- `test_flutter/lib/crawler_source.dart` — Step D 복사본
 
 ## crawler/ Module Details
 
@@ -39,6 +41,31 @@ Files are sorted by name and concatenated. Each file is a code fragment (not an 
 2. **Async pre-capture** (`_01`): Captures images, icons, CustomPaint, ShaderMask, etc. as base64 PNG
 3. **Render tree crawl** (`_04`): Converts RenderObject → Schema v2 JSON nodes recursively, with Smart Flattening and Visual Merge
 4. **Post-processing** (`_05`): Removes overlapping Scaffolds
+
+## Test
+
+`test_flutter/` — Flutter 크롤러 통합 테스트. `pumpWidget`으로 위젯 트리를 구성하고 `figmaExtractorEntryPoint()`를 호출하여 출력 JSON을 검증.
+
+```bash
+cd tools/test_flutter && flutter test
+```
+
+- 스냅샷 갱신: `UPDATE_SNAPSHOTS=1 flutter test`
+- `crawler/_*.dart` 수정 후 반드시 빌드(`dart run tools/merge.dart`) → 테스트 실행
+
+### 구조
+
+```
+test_flutter/
+  pubspec.yaml
+  lib/
+    crawler.dart               # export 'crawler_source.dart'
+    crawler_source.dart        # merge.dart Step D가 복사 (generated)
+  test/
+    helpers.dart               # runCrawler, findNode, findAllNodes, matchSnapshot
+    crawler_test.dart          # testWidgets 기반 통합 테스트
+    snapshots/*.snap.json      # 스냅샷 (UPDATE_SNAPSHOTS=1로 생성)
+```
 
 ## Notes
 

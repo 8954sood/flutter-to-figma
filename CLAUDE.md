@@ -14,6 +14,7 @@ This single command generates three outputs:
 1. `tools/crawler/_*.dart` → `tools/crawler_source.dart`
 2. `figma_plugin/src/_*.js` → `figma_plugin/code.js`
 3. `crawler_source.dart` + `export_figma_layout.dart` → `generated_export_figma_layout.dart`
+4. `crawler_source.dart` → `tools/test_flutter/lib/crawler_source.dart` (테스트용 복사)
 
 ## Code Editing Rules
 
@@ -26,6 +27,7 @@ This single command generates three outputs:
 
 - `tools/crawler_source.dart`
 - `tools/generated_export_figma_layout.dart`
+- `tools/test_flutter/lib/crawler_source.dart`
 - `figma_plugin/code.js`
 
 ## Directory Structure
@@ -35,6 +37,7 @@ tools/
   crawler/           # Dart crawler source modules (edit these)
   merge.dart         # Build script
   export_figma_layout.dart  # CLI skeleton (contains %%CRAWLER_SOURCE%% placeholder)
+  test_flutter/      # Flutter 크롤러 통합 테스트 패키지
 figma_plugin/
   src/               # JS plugin source modules (edit these)
   manifest.json      # Figma plugin manifest
@@ -53,14 +56,33 @@ node figma_plugin/test/run.js
 - 스냅샷 갱신: `node figma_plugin/test/run.js --update`
 - 필터: `node figma_plugin/test/run.js --filter <pattern>`
 
+### 크롤러 통합 테스트 (Flutter)
+
+`tools/crawler/_*.dart` 수정 후 크롤러 출력을 검증한다.
+
+```bash
+cd tools/test_flutter && flutter test
+```
+
+- 스냅샷 갱신: `UPDATE_SNAPSHOTS=1 flutter test`
+- `pumpWidget`으로 위젯 트리 구성 → `figmaExtractorEntryPoint()` 호출 → JSON 구조 검증
+
 ### 전체 검증 순서
 
-`figma_plugin/src/` 파일 수정 시 아래 순서를 따른다:
+`figma_plugin/src/` 파일 수정 시:
 
 ```bash
 dart run tools/merge.dart        # 1. 빌드
 dart format .                    # 2. 포맷 (변경 없어야 함)
-node figma_plugin/test/run.js    # 3. 테스트
+node figma_plugin/test/run.js    # 3. Figma 플러그인 테스트
+```
+
+`tools/crawler/_*.dart` 수정 시:
+
+```bash
+dart run tools/merge.dart                          # 1. 빌드 (Step D: 테스트용 복사 포함)
+dart format .                                      # 2. 포맷
+cd tools/test_flutter && flutter test && cd ../..  # 3. 크롤러 테스트
 ```
 
 ## Test Project
