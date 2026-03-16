@@ -77,6 +77,7 @@ function mergeWrapperChains(node) {
 
   // Chip widgetName이 있는 노드는 mergeWrapperChains 스킵 → handleChip에서 처리
   if (node.widgetName === "Chip") return node;
+  if ((node.properties || {}).layoutWrap) return node;
 
   // 체인 수집: Frame + children.length===1 + child.type===Frame
   // visual 속성이 있는 노드에서 중단 (시각적 경계 보존)
@@ -103,6 +104,14 @@ function mergeWrapperChains(node) {
     var curHasVisual = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
         cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox;
 
+    // 센터링/끝정렬 컨테이너 보존 (visual 흡수보다 먼저 체크)
+    // 현재 노드가 center/end이고 자식과 정렬이 다르면 병합 중단
+    // (Center/Align 위젯이 자식을 감싸는 구조 보존)
+    if ((cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
+         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end") &&
+        (cp.mainAxisAlignment !== np.mainAxisAlignment ||
+         cp.crossAxisAlignment !== np.crossAxisAlignment)) break;
+
     if (nextHasVisual) {
       if (curHasVisual) break; // 양쪽 다 visual → 병합 중단
       // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
@@ -111,17 +120,11 @@ function mergeWrapperChains(node) {
       break;
     }
 
-    // 센터링/끝정렬 컨테이너 보존
+    // 센터링/끝정렬 + visual 컨테이너 보존
     var outerHasFlexGrow = ((chain[0].properties || {}).flexGrow || 0) > 0;
     if (curHasVisual && !outerHasFlexGrow && cp.mainAxisSize === "FIXED" &&
         (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
          cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) break;
-    // 정렬 컨테이너 보존 (visual 없어도): 현재 노드가 center/end이고 자식과 다르면 병합 중단
-    // (Align/Center 위젯 → 자식 Flex와 정렬이 다를 때 컨테이너 역할 유지)
-    if ((cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
-         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end") &&
-        (cp.mainAxisAlignment !== np.mainAxisAlignment ||
-         cp.crossAxisAlignment !== np.crossAxisAlignment)) break;
     // NONE 프레임의 암시적 패딩 계산: 유의미한 자식(Text, visual Frame) 좌표로 추출
     // (빈 STACK/artifact는 프레임 밖 좌표를 가질 수 있으므로 제외)
     // rotation이 있는 자식은 좌표가 회전 전 기준이므로 패딩 계산 스킵
@@ -237,6 +240,16 @@ function mergePropsInto(target, source, isOutermost) {
       if (key in target) {
         target[key] = (target[key] || 0) + (val || 0);
       } else {
+        target[key] = val;
+      }
+      continue;
+    }
+
+    // Sizing (sizingH, sizingV): 바깥쪽 우선 (부모가 지정한 sizing이 자식 내부 sizing보다 우선)
+    if (key === "sizingH" || key === "sizingV") {
+      if (isOutermost) {
+        target[key] = val;
+      } else if (!(key in target)) {
         target[key] = val;
       }
       continue;

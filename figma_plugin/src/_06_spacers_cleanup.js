@@ -133,6 +133,7 @@ function removeEmptyLeaves(node) {
   node.children = children.filter(function(c) { return !isEmptyLeaf(c); });
 
   // 패딩 초과 방지: rect 높이/너비를 기준으로 캡핑
+  // content 자체가 rect를 초과하면 스킵 (ScrollView overflow 등)
   var rectH = (node.rect || {}).h || 0;
   var rectW = (node.rect || {}).w || 0;
   if (isVert && rectH > 0) {
@@ -140,24 +141,28 @@ function removeEmptyLeaves(node) {
     for (var i = 0; i < node.children.length; i++) {
       contentH += ((node.children[i].rect || {}).h || 0);
     }
-    var totalPad = (props.paddingTop || 0) + (props.paddingBottom || 0);
-    if (totalPad + contentH > rectH) {
-      var avail = Math.max(0, rectH - contentH);
-      var ratio = totalPad > 0 ? (props.paddingTop || 0) / totalPad : 0.5;
-      props.paddingTop = Math.round(avail * ratio);
-      props.paddingBottom = avail - props.paddingTop;
+    if (contentH <= rectH) {
+      var totalPad = (props.paddingTop || 0) + (props.paddingBottom || 0);
+      if (totalPad + contentH > rectH) {
+        var avail = Math.max(0, rectH - contentH);
+        var ratio = totalPad > 0 ? (props.paddingTop || 0) / totalPad : 0.5;
+        props.paddingTop = Math.round(avail * ratio);
+        props.paddingBottom = avail - props.paddingTop;
+      }
     }
   } else if (!isVert && rectW > 0) {
     var contentW = 0;
     for (var i = 0; i < node.children.length; i++) {
       contentW += ((node.children[i].rect || {}).w || 0);
     }
-    var totalPad = (props.paddingLeft || 0) + (props.paddingRight || 0);
-    if (totalPad + contentW > rectW) {
-      var avail = Math.max(0, rectW - contentW);
-      var ratio = totalPad > 0 ? (props.paddingLeft || 0) / totalPad : 0.5;
-      props.paddingLeft = Math.round(avail * ratio);
-      props.paddingRight = avail - props.paddingLeft;
+    if (contentW <= rectW) {
+      var totalPad = (props.paddingLeft || 0) + (props.paddingRight || 0);
+      if (totalPad + contentW > rectW) {
+        var avail = Math.max(0, rectW - contentW);
+        var ratio = totalPad > 0 ? (props.paddingLeft || 0) / totalPad : 0.5;
+        props.paddingLeft = Math.round(avail * ratio);
+        props.paddingRight = avail - props.paddingLeft;
+      }
     }
   }
 }

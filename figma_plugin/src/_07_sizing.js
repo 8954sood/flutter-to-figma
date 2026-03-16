@@ -1,11 +1,13 @@
 // --- 1.6 assignSizingHints ---
-function assignSizingHints(node, parentProps) {
+function assignSizingHints(node, parentProps, parentNode) {
   if (!node || typeof node !== "object") return;
 
   var props = node.properties || {};
   var parentLayoutMode = parentProps ? parentProps.layoutMode : null;
   var parentCross = parentProps ? (parentProps.crossAxisAlignment || "") : "";
   var crossIsStretch = parentCross.indexOf("stretch") !== -1;
+  var parentMainAxisSize = parentProps ? (parentProps.mainAxisSize || "") : "";
+  var parentIsAutoSize = parentMainAxisSize === "AUTO" || parentMainAxisSize === "min";
 
   // Image 노드: 항상 FIXED (래스터 이미지는 고정 크기)
   if (node.type === "Image") {
@@ -25,7 +27,8 @@ function assignSizingHints(node, parentProps) {
     }
 
     // Text + 부모 cross=stretch → cross축 FILL
-    if (crossIsStretch) {
+    // 단, 부모가 mainAxisSize=AUTO (content 크기에 맞추는 컨테이너)면 스킵
+    if (crossIsStretch && !parentIsAutoSize) {
       if (parentLayoutMode === "VERTICAL") {
         node._sizingH = "FILL";
       } else if (parentLayoutMode === "HORIZONTAL") {
@@ -56,8 +59,9 @@ function assignSizingHints(node, parentProps) {
         // FIXED 유지 — rect 크기가 그대로 적용됨
       }
 
-      // 부모 cross=stretch
-      if (crossIsStretch) {
+      // 부모 cross=stretch → cross축 FILL
+      // 단, 부모가 mainAxisSize=AUTO (content 크기에 맞추는 컨테이너)면 스킵
+      if (crossIsStretch && !parentIsAutoSize) {
         if (parentLayoutMode === "VERTICAL") {
           node._sizingH = "FILL";
         } else if (parentLayoutMode === "HORIZONTAL") {
@@ -82,7 +86,7 @@ function assignSizingHints(node, parentProps) {
       }
     }
 
-    // 크롤러/전처리가 명시적으로 sizingH/sizingV를 설정한 경우 반영
+    // 크롤러/전처리가 명시적으로 FILL을 설정한 경우 반영
     if (props.sizingH === "FILL") node._sizingH = "FILL";
     if (props.sizingV === "FILL") node._sizingV = "FILL";
   }
@@ -95,23 +99,25 @@ function assignSizingHints(node, parentProps) {
   // 자식 재귀
   var children = node.children || [];
   for (var i = 0; i < children.length; i++) {
-    assignSizingHints(children[i], props);
+    assignSizingHints(children[i], props, node);
   }
 
-  // Wrap 자식을 가진 부모: cross axis를 FILL로 설정
-  // (Wrap이 부모 전체 너비를 사용해야 줄바꿈이 올바르게 동작)
+  // Wrap 포함 여부 전파: 자식에 Wrap이 있거나 자손에 Wrap이 있으면 플래그 설정
+  if (props.layoutWrap) {
+    node._hasWrap = true;
+  }
   if (node.type === "Frame" && props.layoutMode && !props.layoutWrap) {
-    var hasWrapChild = false;
+    var hasWrapDescendant = false;
     for (var wi = 0; wi < children.length; wi++) {
-      var cp = (children[wi].properties || {});
-      if (cp.layoutWrap) { hasWrapChild = true; break; }
+      if (children[wi]._hasWrap) { hasWrapDescendant = true; break; }
     }
-    if (hasWrapChild) {
-      if (props.layoutMode === "VERTICAL" && node._sizingH !== "FILL") {
-        node._sizingH = "FILL";
-      } else if (props.layoutMode === "HORIZONTAL" && node._sizingV !== "FILL") {
-        node._sizingV = "FILL";
-      }
+    if (hasWrapDescendant) {
+      node._hasWrap = true; // 상위로 전파
+      // Wrap이 가로 방향이므로:
+      // - 가로(H): FILL 유지/설정 (Wrap이 부모 폭을 채워야 줄바꿈 동작)
+      // - 세로(V): HUG (Wrap 줄바꿈에 맞춰 높이 조절)
+      if (node._sizingH !== "FILL") node._sizingH = "FILL";
+      node._sizingV = "HUG";
     }
   }
 }

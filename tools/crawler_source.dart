@@ -1345,6 +1345,19 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         }
       } catch (_) {}
 
+      // maxLines / textOverflow 수집
+      if (node.maxLines != null) {
+        visual['maxLines'] = node.maxLines;
+      }
+      final overflowName = node.overflow.toString().split('.').last;
+      if (overflowName != 'clip') {
+        // clip이 기본값이므로 clip이 아닌 경우만 출력
+        visual['textOverflow'] = overflowName;
+      }
+      if (node.softWrap == false) {
+        visual['softWrap'] = false;
+      }
+
       // ShaderMask gradient → 텍스트에 gradient fill 적용
       final smGradient = _shaderMaskGradients[node];
       if (smGradient != null) {
@@ -1459,12 +1472,42 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       }
     }
 
-    // Flex 자식인 Padding → wrapper Frame 없이 투과 (gap 계산 보존)
-    // 자식의 자체 rect 유지 → recalcItemSpacing가 실제 시각 간격 계산
+    // Flex 자식인 Padding → cross축 padding 여부로 wrapper/투과 결정
     if (childCount == 1 && singleChild != null && node.parent is RenderFlex) {
+      final parentFlex = node.parent! as RenderFlex;
+      final isParentHorizontal = parentFlex.direction == Axis.horizontal;
+      // cross축 padding이 있으면 content padding → wrapper 필요
+      final hasCrossAxisPadding = isParentHorizontal
+          ? (insets.top > 0 || insets.bottom > 0)
+          : (insets.left > 0 || insets.right > 0);
+
       final childResult = _crawl(singleChild);
       if (childResult != null) {
-        return childResult;
+        if (hasCrossAxisPadding) {
+          // cross축 padding → wrapper Frame 생성 (content padding 보존)
+          return <String, dynamic>{
+            'type': 'Frame',
+            'layoutMode': isParentHorizontal ? 'ROW' : 'COLUMN',
+            'rect': {
+              'x': offset.dx,
+              'y': offset.dy,
+              'w': node.size.width,
+              'h': node.size.height,
+            },
+            'visual': <String, dynamic>{},
+            'containerLayout': <String, dynamic>{
+              'padding': paddingMap,
+              'mainAxisAlignment': 'start',
+              'crossAxisAlignment': 'stretch',
+              'mainAxisSize': 'min',
+              'itemSpacing': 0.0,
+            },
+            'children': [childResult],
+          };
+        } else {
+          // main축만 padding → 투과 (margin/spacing 패턴)
+          return childResult;
+        }
       }
     }
 
@@ -2377,14 +2420,25 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
                 final flex = parentData.flex ?? 0;
                 final isTight = parentData.fit == FlexFit.tight;
 
+                // cross축에서 intermediate widget의 FILL을 보존할지 결정
+                // stretch면 보존, 아니면 덮어씀 (center/start Column에서 FILL 방지)
+                final isStretch =
+                    flexNode.crossAxisAlignment == CrossAxisAlignment.stretch;
+
                 if (flex > 0 && isTight) {
                   // Expanded
                   childLayout['flexGrow'] = flex;
                   if (isHorizontal) {
                     childLayout['sizingH'] = 'FILL';
-                    childLayout['sizingV'] = 'HUG';
+                    childLayout['sizingV'] =
+                        (isStretch && childLayout['sizingV'] == 'FILL')
+                        ? 'FILL'
+                        : 'HUG';
                   } else {
-                    childLayout['sizingH'] = 'HUG';
+                    childLayout['sizingH'] =
+                        (isStretch && childLayout['sizingH'] == 'FILL')
+                        ? 'FILL'
+                        : 'HUG';
                     childLayout['sizingV'] = 'FILL';
                   }
                 } else if (flex > 0) {
@@ -2395,8 +2449,20 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
                 } else {
                   // 일반 자식
                   childLayout['flexGrow'] = 0;
-                  childLayout['sizingH'] = 'HUG';
-                  childLayout['sizingV'] = 'HUG';
+                  // cross축: stretch면 intermediate FILL 보존, 아니면 HUG
+                  if (isHorizontal) {
+                    childLayout['sizingH'] = 'HUG';
+                    childLayout['sizingV'] =
+                        (isStretch && childLayout['sizingV'] == 'FILL')
+                        ? 'FILL'
+                        : 'HUG';
+                  } else {
+                    childLayout['sizingH'] =
+                        (isStretch && childLayout['sizingH'] == 'FILL')
+                        ? 'FILL'
+                        : 'HUG';
+                    childLayout['sizingV'] = 'HUG';
+                  }
                 }
               } else {
                 childLayout['flexGrow'] = 0;

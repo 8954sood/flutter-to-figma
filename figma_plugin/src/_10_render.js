@@ -113,6 +113,15 @@ function renderNode(node, parentFigma, parentLayoutDir) {
         figNode.textAutoResize = "TRUNCATE";
         figNode.textTruncation = "ENDING";
       }
+      // maxLines/textOverflow 기반 truncation
+      if (props.maxLines === 1 || props.textOverflow === "ellipsis") {
+        var fontSize2 = props.fontSize || 16;
+        var lineHMul2 = props.lineHeightMultiplier || 1.4;
+        var singleLineH2 = Math.ceil(fontSize2 * lineHMul2);
+        figNode.resize(rw, singleLineH2);
+        figNode.textAutoResize = "TRUNCATE";
+        figNode.textTruncation = (props.textOverflow === "ellipsis") ? "ENDING" : "DISABLED";
+      }
       // 세로 중앙 정렬 (FittedBox alignment 등)
       if (props.textAlignVertical === "center") {
         figNode.textAlignVertical = "CENTER";
@@ -250,6 +259,29 @@ function renderNode(node, parentFigma, parentLayoutDir) {
 
   // Sizing 적용 (appendChild 후)
   applySizing(figNode, node, parentLayoutDir);
+
+  // Text TRUNCATE: applySizing 후 재적용
+  // (layoutSizingVertical=HUG가 textAutoResize를 HEIGHT로 리셋하므로)
+  if (node.type === "Text") {
+    var needsTruncate = false;
+    var truncType = "DISABLED";
+    if (props.textTruncate === "ENDING") {
+      needsTruncate = true;
+      truncType = "ENDING";
+    } else if (props.maxLines === 1 || props.textOverflow === "ellipsis") {
+      needsTruncate = true;
+      truncType = (props.textOverflow === "ellipsis") ? "ENDING" : "DISABLED";
+    }
+    if (needsTruncate) {
+      var fs = props.fontSize || 16;
+      var lhm = props.lineHeightMultiplier || 1.4;
+      var slh = Math.ceil(fs * lhm);
+      figNode.resize(rw, slh);
+      try { figNode.layoutSizingVertical = "FIXED"; } catch(e) {}
+      figNode.textAutoResize = "TRUNCATE";
+      figNode.textTruncation = truncType;
+    }
+  }
 
   // 자식 재귀 (Frame만)
   if (node.type === "Frame" && !props.isIconBox && !props.isVectorCandidate) {

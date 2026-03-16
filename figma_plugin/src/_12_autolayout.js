@@ -51,8 +51,10 @@ function applyAutoLayout(frame, props) {
     frame.primaryAxisSizingMode = "FIXED";
   }
 
-  // Counter axis sizing: 기본 FIXED로 안전
-  frame.counterAxisSizingMode = "FIXED";
+  // Counter axis sizing: 기본 FIXED로 안전 (WRAP은 위에서 AUTO로 설정됨)
+  if (!props.layoutWrap) {
+    frame.counterAxisSizingMode = "FIXED";
+  }
 
   // Alignment
   frame.primaryAxisAlignItems = mapMainAxisAlign(props.mainAxisAlignment);

@@ -396,6 +396,7 @@ function mergeWrapperChains(node) {
 
   // Chip widgetName이 있는 노드는 mergeWrapperChains 스킵 → handleChip에서 처리
   if (node.widgetName === "Chip") return node;
+  if ((node.properties || {}).layoutWrap) return node;
 
   // 체인 수집: Frame + children.length===1 + child.type===Frame
   // visual 속성이 있는 노드에서 중단 (시각적 경계 보존)
@@ -422,6 +423,14 @@ function mergeWrapperChains(node) {
     var curHasVisual = cp.backgroundColor || cp.hasBorder || cp.borderRadius ||
         cp.elevation || cp.shadowColor || cp.isIconBox || cp.isSvgBox;
 
+    // 센터링/끝정렬 컨테이너 보존 (visual 흡수보다 먼저 체크)
+    // 현재 노드가 center/end이고 자식과 정렬이 다르면 병합 중단
+    // (Center/Align 위젯이 자식을 감싸는 구조 보존)
+    if ((cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
+         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end") &&
+        (cp.mainAxisAlignment !== np.mainAxisAlignment ||
+         cp.crossAxisAlignment !== np.crossAxisAlignment)) break;
+
     if (nextHasVisual) {
       if (curHasVisual) break; // 양쪽 다 visual → 병합 중단
       // outer가 비주얼 없음 → visual child 흡수 후 체인 종료
@@ -430,17 +439,11 @@ function mergeWrapperChains(node) {
       break;
     }
 
-    // 센터링/끝정렬 컨테이너 보존
+    // 센터링/끝정렬 + visual 컨테이너 보존
     var outerHasFlexGrow = ((chain[0].properties || {}).flexGrow || 0) > 0;
     if (curHasVisual && !outerHasFlexGrow && cp.mainAxisSize === "FIXED" &&
         (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
          cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) break;
-    // 정렬 컨테이너 보존 (visual 없어도): 현재 노드가 center/end이고 자식과 다르면 병합 중단
-    // (Align/Center 위젯 → 자식 Flex와 정렬이 다를 때 컨테이너 역할 유지)
-    if ((cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
-         cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end") &&
-        (cp.mainAxisAlignment !== np.mainAxisAlignment ||
-         cp.crossAxisAlignment !== np.crossAxisAlignment)) break;
     // NONE 프레임의 암시적 패딩 계산: 유의미한 자식(Text, visual Frame) 좌표로 추출
     // (빈 STACK/artifact는 프레임 밖 좌표를 가질 수 있으므로 제외)
     // rotation이 있는 자식은 좌표가 회전 전 기준이므로 패딩 계산 스킵
@@ -556,6 +559,16 @@ function mergePropsInto(target, source, isOutermost) {
       if (key in target) {
         target[key] = (target[key] || 0) + (val || 0);
       } else {
+        target[key] = val;
+      }
+      continue;
+    }
+
+    // Sizing (sizingH, sizingV): 바깥쪽 우선 (부모가 지정한 sizing이 자식 내부 sizing보다 우선)
+    if (key === "sizingH" || key === "sizingV") {
+      if (isOutermost) {
+        target[key] = val;
+      } else if (!(key in target)) {
         target[key] = val;
       }
       continue;
@@ -1358,6 +1371,7 @@ function removeEmptyLeaves(node) {
   node.children = children.filter(function(c) { return !isEmptyLeaf(c); });
 
   // 패딩 초과 방지: rect 높이/너비를 기준으로 캡핑
+  // content 자체가 rect를 초과하면 스킵 (ScrollView overflow 등)
   var rectH = (node.rect || {}).h || 0;
   var rectW = (node.rect || {}).w || 0;
   if (isVert && rectH > 0) {
@@ -1365,24 +1379,28 @@ function removeEmptyLeaves(node) {
     for (var i = 0; i < node.children.length; i++) {
       contentH += ((node.children[i].rect || {}).h || 0);
     }
-    var totalPad = (props.paddingTop || 0) + (props.paddingBottom || 0);
-    if (totalPad + contentH > rectH) {
-      var avail = Math.max(0, rectH - contentH);
-      var ratio = totalPad > 0 ? (props.paddingTop || 0) / totalPad : 0.5;
-      props.paddingTop = Math.round(avail * ratio);
-      props.paddingBottom = avail - props.paddingTop;
+    if (contentH <= rectH) {
+      var totalPad = (props.paddingTop || 0) + (props.paddingBottom || 0);
+      if (totalPad + contentH > rectH) {
+        var avail = Math.max(0, rectH - contentH);
+        var ratio = totalPad > 0 ? (props.paddingTop || 0) / totalPad : 0.5;
+        props.paddingTop = Math.round(avail * ratio);
+        props.paddingBottom = avail - props.paddingTop;
+      }
     }
   } else if (!isVert && rectW > 0) {
     var contentW = 0;
     for (var i = 0; i < node.children.length; i++) {
       contentW += ((node.children[i].rect || {}).w || 0);
     }
-    var totalPad = (props.paddingLeft || 0) + (props.paddingRight || 0);
-    if (totalPad + contentW > rectW) {
-      var avail = Math.max(0, rectW - contentW);
-      var ratio = totalPad > 0 ? (props.paddingLeft || 0) / totalPad : 0.5;
-      props.paddingLeft = Math.round(avail * ratio);
-      props.paddingRight = avail - props.paddingLeft;
+    if (contentW <= rectW) {
+      var totalPad = (props.paddingLeft || 0) + (props.paddingRight || 0);
+      if (totalPad + contentW > rectW) {
+        var avail = Math.max(0, rectW - contentW);
+        var ratio = totalPad > 0 ? (props.paddingLeft || 0) / totalPad : 0.5;
+        props.paddingLeft = Math.round(avail * ratio);
+        props.paddingRight = avail - props.paddingLeft;
+      }
     }
   }
 }
@@ -1439,13 +1457,15 @@ function recalcItemSpacing(node) {
 }
 
 // --- 1.6 assignSizingHints ---
-function assignSizingHints(node, parentProps) {
+function assignSizingHints(node, parentProps, parentNode) {
   if (!node || typeof node !== "object") return;
 
   var props = node.properties || {};
   var parentLayoutMode = parentProps ? parentProps.layoutMode : null;
   var parentCross = parentProps ? (parentProps.crossAxisAlignment || "") : "";
   var crossIsStretch = parentCross.indexOf("stretch") !== -1;
+  var parentMainAxisSize = parentProps ? (parentProps.mainAxisSize || "") : "";
+  var parentIsAutoSize = parentMainAxisSize === "AUTO" || parentMainAxisSize === "min";
 
   // Image 노드: 항상 FIXED (래스터 이미지는 고정 크기)
   if (node.type === "Image") {
@@ -1465,7 +1485,8 @@ function assignSizingHints(node, parentProps) {
     }
 
     // Text + 부모 cross=stretch → cross축 FILL
-    if (crossIsStretch) {
+    // 단, 부모가 mainAxisSize=AUTO (content 크기에 맞추는 컨테이너)면 스킵
+    if (crossIsStretch && !parentIsAutoSize) {
       if (parentLayoutMode === "VERTICAL") {
         node._sizingH = "FILL";
       } else if (parentLayoutMode === "HORIZONTAL") {
@@ -1496,8 +1517,9 @@ function assignSizingHints(node, parentProps) {
         // FIXED 유지 — rect 크기가 그대로 적용됨
       }
 
-      // 부모 cross=stretch
-      if (crossIsStretch) {
+      // 부모 cross=stretch → cross축 FILL
+      // 단, 부모가 mainAxisSize=AUTO (content 크기에 맞추는 컨테이너)면 스킵
+      if (crossIsStretch && !parentIsAutoSize) {
         if (parentLayoutMode === "VERTICAL") {
           node._sizingH = "FILL";
         } else if (parentLayoutMode === "HORIZONTAL") {
@@ -1522,7 +1544,7 @@ function assignSizingHints(node, parentProps) {
       }
     }
 
-    // 크롤러/전처리가 명시적으로 sizingH/sizingV를 설정한 경우 반영
+    // 크롤러/전처리가 명시적으로 FILL을 설정한 경우 반영
     if (props.sizingH === "FILL") node._sizingH = "FILL";
     if (props.sizingV === "FILL") node._sizingV = "FILL";
   }
@@ -1535,23 +1557,25 @@ function assignSizingHints(node, parentProps) {
   // 자식 재귀
   var children = node.children || [];
   for (var i = 0; i < children.length; i++) {
-    assignSizingHints(children[i], props);
+    assignSizingHints(children[i], props, node);
   }
 
-  // Wrap 자식을 가진 부모: cross axis를 FILL로 설정
-  // (Wrap이 부모 전체 너비를 사용해야 줄바꿈이 올바르게 동작)
+  // Wrap 포함 여부 전파: 자식에 Wrap이 있거나 자손에 Wrap이 있으면 플래그 설정
+  if (props.layoutWrap) {
+    node._hasWrap = true;
+  }
   if (node.type === "Frame" && props.layoutMode && !props.layoutWrap) {
-    var hasWrapChild = false;
+    var hasWrapDescendant = false;
     for (var wi = 0; wi < children.length; wi++) {
-      var cp = (children[wi].properties || {});
-      if (cp.layoutWrap) { hasWrapChild = true; break; }
+      if (children[wi]._hasWrap) { hasWrapDescendant = true; break; }
     }
-    if (hasWrapChild) {
-      if (props.layoutMode === "VERTICAL" && node._sizingH !== "FILL") {
-        node._sizingH = "FILL";
-      } else if (props.layoutMode === "HORIZONTAL" && node._sizingV !== "FILL") {
-        node._sizingV = "FILL";
-      }
+    if (hasWrapDescendant) {
+      node._hasWrap = true; // 상위로 전파
+      // Wrap이 가로 방향이므로:
+      // - 가로(H): FILL 유지/설정 (Wrap이 부모 폭을 채워야 줄바꿈 동작)
+      // - 세로(V): HUG (Wrap 줄바꿈에 맞춰 높이 조절)
+      if (node._sizingH !== "FILL") node._sizingH = "FILL";
+      node._sizingV = "HUG";
     }
   }
 }
@@ -1807,6 +1831,15 @@ function renderNode(node, parentFigma, parentLayoutDir) {
         figNode.textAutoResize = "TRUNCATE";
         figNode.textTruncation = "ENDING";
       }
+      // maxLines/textOverflow 기반 truncation
+      if (props.maxLines === 1 || props.textOverflow === "ellipsis") {
+        var fontSize2 = props.fontSize || 16;
+        var lineHMul2 = props.lineHeightMultiplier || 1.4;
+        var singleLineH2 = Math.ceil(fontSize2 * lineHMul2);
+        figNode.resize(rw, singleLineH2);
+        figNode.textAutoResize = "TRUNCATE";
+        figNode.textTruncation = (props.textOverflow === "ellipsis") ? "ENDING" : "DISABLED";
+      }
       // 세로 중앙 정렬 (FittedBox alignment 등)
       if (props.textAlignVertical === "center") {
         figNode.textAlignVertical = "CENTER";
@@ -1944,6 +1977,29 @@ function renderNode(node, parentFigma, parentLayoutDir) {
 
   // Sizing 적용 (appendChild 후)
   applySizing(figNode, node, parentLayoutDir);
+
+  // Text TRUNCATE: applySizing 후 재적용
+  // (layoutSizingVertical=HUG가 textAutoResize를 HEIGHT로 리셋하므로)
+  if (node.type === "Text") {
+    var needsTruncate = false;
+    var truncType = "DISABLED";
+    if (props.textTruncate === "ENDING") {
+      needsTruncate = true;
+      truncType = "ENDING";
+    } else if (props.maxLines === 1 || props.textOverflow === "ellipsis") {
+      needsTruncate = true;
+      truncType = (props.textOverflow === "ellipsis") ? "ENDING" : "DISABLED";
+    }
+    if (needsTruncate) {
+      var fs = props.fontSize || 16;
+      var lhm = props.lineHeightMultiplier || 1.4;
+      var slh = Math.ceil(fs * lhm);
+      figNode.resize(rw, slh);
+      try { figNode.layoutSizingVertical = "FIXED"; } catch(e) {}
+      figNode.textAutoResize = "TRUNCATE";
+      figNode.textTruncation = truncType;
+    }
+  }
 
   // 자식 재귀 (Frame만)
   if (node.type === "Frame" && !props.isIconBox && !props.isVectorCandidate) {
@@ -2322,8 +2378,10 @@ function applyAutoLayout(frame, props) {
     frame.primaryAxisSizingMode = "FIXED";
   }
 
-  // Counter axis sizing: 기본 FIXED로 안전
-  frame.counterAxisSizingMode = "FIXED";
+  // Counter axis sizing: 기본 FIXED로 안전 (WRAP은 위에서 AUTO로 설정됨)
+  if (!props.layoutWrap) {
+    frame.counterAxisSizingMode = "FIXED";
+  }
 
   // Alignment
   frame.primaryAxisAlignItems = mapMainAxisAlign(props.mainAxisAlignment);
