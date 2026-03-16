@@ -206,24 +206,328 @@ module.exports = [
   // ============================================================
   // handleBottomNavigationBar
   // ============================================================
+  // ============================================================
+  // handleBottomNavigationBar — unit tests
+  // ============================================================
   {
-    name: "handleBottomNavigationBar: children get flexGrow=1 + center",
+    name: "handleBottomNavigationBar: sets HORIZONTAL + spaceAround + center",
     fn: function() {
       var node = {
         type: "Frame", properties: {},
         children: [
-          { type: "Frame", properties: { fixedWidth: true } },
-          { type: "Frame", properties: { fixedWidth: true } },
-          { type: "Frame", properties: { fixedWidth: true } },
+          { type: "Frame", properties: {} },
+          { type: "Frame", properties: {} },
         ]
       };
       P.handleBottomNavigationBar(node);
       assert.strictEqual(node.properties.layoutMode, "HORIZONTAL");
       assert.strictEqual(node.properties.mainAxisAlignment, "spaceAround");
+      assert.strictEqual(node.properties.crossAxisAlignment, "center");
+    }
+  },
+  {
+    name: "handleBottomNavigationBar: children get flexGrow=1 + FlexFit.tight",
+    fn: function() {
+      var node = {
+        type: "Frame", properties: {},
+        children: [
+          { type: "Frame", properties: {} },
+          { type: "Frame", properties: {} },
+          { type: "Frame", properties: {} },
+        ]
+      };
+      P.handleBottomNavigationBar(node);
       for (var i = 0; i < node.children.length; i++) {
         assert.strictEqual(node.children[i].properties.flexGrow, 1);
+        assert.strictEqual(node.children[i].properties.flexFit, "FlexFit.tight");
+      }
+    }
+  },
+  {
+    name: "handleBottomNavigationBar: removes fixedWidth from children",
+    fn: function() {
+      var node = {
+        type: "Frame", properties: {},
+        children: [
+          { type: "Frame", properties: { fixedWidth: true } },
+          { type: "Frame", properties: { fixedWidth: true, layoutMode: "VERTICAL" } },
+        ]
+      };
+      P.handleBottomNavigationBar(node);
+      for (var i = 0; i < node.children.length; i++) {
         assert.strictEqual(node.children[i].properties.fixedWidth, undefined);
       }
+      // Other props preserved
+      assert.strictEqual(node.children[1].properties.layoutMode, "VERTICAL");
+    }
+  },
+  {
+    name: "handleBottomNavigationBar: children get center alignment",
+    fn: function() {
+      var node = {
+        type: "Frame", properties: {},
+        children: [
+          { type: "Frame", properties: { crossAxisAlignment: "start" } },
+          { type: "Frame", properties: {} },
+        ]
+      };
+      P.handleBottomNavigationBar(node);
+      for (var i = 0; i < node.children.length; i++) {
+        assert.strictEqual(node.children[i].properties.crossAxisAlignment, "center");
+        assert.strictEqual(node.children[i].properties.mainAxisAlignment, "center");
+      }
+    }
+  },
+  {
+    name: "handleBottomNavigationBar: empty children array → no crash",
+    fn: function() {
+      var node = { type: "Frame", properties: {}, children: [] };
+      P.handleBottomNavigationBar(node);
+      assert.strictEqual(node.properties.layoutMode, "HORIZONTAL");
+      assert.strictEqual(node.children.length, 0);
+    }
+  },
+  // ============================================================
+  // handleBottomNavigationBar — pipeline tests
+  // ============================================================
+  {
+    name: "pipeline: BottomNavigationBar — 2 items with icon+label",
+    fn: function() {
+      var input = {
+        type: "Frame",
+        layoutMode: "ROW",
+        rect: { x: 0, y: 834, w: 411, h: 80 },
+        widgetName: "BottomNavigationBar",
+        visual: { backgroundColor: "#FFFFFFFF" },
+        containerLayout: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "center", padding: { top: 0, right: 0, bottom: 24, left: 0 } },
+        children: [
+          {
+            type: "Frame", layoutMode: "COLUMN",
+            rect: { x: 0, y: 841, w: 206, h: 58 },
+            visual: {},
+            containerLayout: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "center", padding: { top: 7, right: 0, bottom: 7, left: 0 } },
+            childLayout: { flexGrow: 1 },
+            children: [
+              { type: "Frame", layoutMode: "COLUMN", rect: { x: 91, y: 848, w: 24, h: 24 },
+                visual: {}, containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "center" },
+                children: [
+                  { type: "Frame", rect: { x: 91, y: 848, w: 24, h: 24 }, visual: { isIconBox: true }, containerLayout: {}, childLayout: { fixedWidth: true } }
+                ]
+              },
+              { type: "Frame", layoutMode: "COLUMN", rect: { x: 83, y: 879, w: 40, h: 20 },
+                visual: {}, containerLayout: { mainAxisAlignment: "end", crossAxisAlignment: "center" },
+                children: [
+                  { type: "Text", rect: { x: 83, y: 879, w: 40, h: 20 }, visual: { content: "Home", fontSize: 12, color: "#FF1A1A1A" }, containerLayout: {} }
+                ]
+              }
+            ]
+          },
+          {
+            type: "Frame", layoutMode: "COLUMN",
+            rect: { x: 206, y: 841, w: 206, h: 58 },
+            visual: {},
+            containerLayout: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "center", padding: { top: 7, right: 0, bottom: 7, left: 0 } },
+            childLayout: { flexGrow: 1 },
+            children: [
+              { type: "Frame", layoutMode: "COLUMN", rect: { x: 297, y: 848, w: 24, h: 24 },
+                visual: {}, containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "center" },
+                children: [
+                  { type: "Frame", rect: { x: 297, y: 848, w: 24, h: 24 }, visual: { isIconBox: true }, containerLayout: {}, childLayout: { fixedWidth: true } }
+                ]
+              },
+              { type: "Frame", layoutMode: "COLUMN", rect: { x: 284, y: 879, w: 51, h: 20 },
+                visual: {}, containerLayout: { mainAxisAlignment: "end", crossAxisAlignment: "center" },
+                children: [
+                  { type: "Text", rect: { x: 284, y: 879, w: 51, h: 20 }, visual: { content: "Settings", fontSize: 12, color: "#FF666666" }, containerLayout: {} }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var p = result.properties || {};
+
+      // Layout
+      assert.strictEqual(p.layoutMode, "HORIZONTAL");
+      assert.strictEqual(p.mainAxisAlignment, "spaceAround");
+      assert.strictEqual(p.crossAxisAlignment, "center");
+
+      // Bottom padding (safe area)
+      assert.strictEqual(p.paddingBottom, 24);
+
+      // Children: 2 items
+      assert.strictEqual(result.children.length, 2);
+
+      // Each child: flexGrow=1, center alignment
+      for (var i = 0; i < result.children.length; i++) {
+        var cp = result.children[i].properties || {};
+        assert.strictEqual(cp.flexGrow, 1, "child[" + i + "] flexGrow=1");
+        assert.strictEqual(cp.crossAxisAlignment, "center", "child[" + i + "] cross=center");
+        assert.strictEqual(cp.mainAxisAlignment, "center", "child[" + i + "] main=center");
+        assert.strictEqual(cp.fixedWidth, undefined, "child[" + i + "] fixedWidth removed");
+      }
+
+      // Labels exist
+      var texts = [];
+      function findTexts(n) {
+        if (n.type === "Text") texts.push((n.properties || {}).content);
+        var ch = n.children || [];
+        for (var i = 0; i < ch.length; i++) findTexts(ch[i]);
+      }
+      findTexts(result);
+      assert.ok(texts.indexOf("Home") !== -1, "Home label exists");
+      assert.ok(texts.indexOf("Settings") !== -1, "Settings label exists");
+    }
+  },
+  {
+    name: "pipeline: BottomNavigationBar — 6 items (many tabs)",
+    fn: function() {
+      var items = [];
+      var labels = ["Profile", "Finance", "Weather", "Settings", "Test", "AppBar"];
+      for (var i = 0; i < labels.length; i++) {
+        items.push({
+          type: "Frame", layoutMode: "COLUMN",
+          rect: { x: i * 69, y: 841, w: 69, h: 58 },
+          visual: {},
+          containerLayout: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "center", padding: { top: 7, right: 0, bottom: 7, left: 0 } },
+          childLayout: { flexGrow: 1 },
+          children: [
+            { type: "Frame", rect: { x: i * 69 + 22, y: 848, w: 24, h: 24 },
+              visual: { isIconBox: true }, containerLayout: {}, childLayout: { fixedWidth: true } },
+            { type: "Text", rect: { x: i * 69 + 10, y: 879, w: 50, h: 20 },
+              visual: { content: labels[i], fontSize: 12 }, containerLayout: {} }
+          ]
+        });
+      }
+      var input = {
+        type: "Frame", layoutMode: "ROW",
+        rect: { x: 0, y: 834, w: 411, h: 82 },
+        widgetName: "BottomNavigationBar",
+        visual: { backgroundColor: "#FFFEF7FF" },
+        containerLayout: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "center", padding: { top: 0, right: 0, bottom: 24, left: 0 } },
+        children: items
+      };
+      var result = helpers.runPreprocess(input);
+
+      assert.strictEqual(result.children.length, 6, "All 6 tabs present");
+      for (var i = 0; i < result.children.length; i++) {
+        var cp = result.children[i].properties || {};
+        assert.strictEqual(cp.flexGrow, 1, "tab[" + i + "] flexGrow=1");
+      }
+
+      // Verify all labels survived
+      var texts = [];
+      function findTexts(n) {
+        if (n.type === "Text") texts.push((n.properties || {}).content);
+        var ch = n.children || [];
+        for (var i = 0; i < ch.length; i++) findTexts(ch[i]);
+      }
+      findTexts(result);
+      for (var i = 0; i < labels.length; i++) {
+        assert.ok(texts.indexOf(labels[i]) !== -1, "Label '" + labels[i] + "' exists");
+      }
+    }
+  },
+  {
+    name: "pipeline: BottomNavigationBar — preserves bg color and bottom padding",
+    fn: function() {
+      var input = {
+        type: "Frame", layoutMode: "ROW",
+        rect: { x: 0, y: 0, w: 400, h: 80 },
+        widgetName: "BottomNavigationBar",
+        visual: { backgroundColor: "#FFFFFFFF" },
+        containerLayout: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "center", padding: { top: 0, right: 0, bottom: 34, left: 0 } },
+        children: [
+          { type: "Frame", layoutMode: "COLUMN", rect: { x: 0, y: 0, w: 200, h: 56 },
+            visual: {}, containerLayout: {}, childLayout: { flexGrow: 1 },
+            children: [
+              { type: "Text", rect: { x: 90, y: 36, w: 20, h: 15 }, visual: { content: "A" }, containerLayout: {} }
+            ] },
+          { type: "Frame", layoutMode: "COLUMN", rect: { x: 200, y: 0, w: 200, h: 56 },
+            visual: {}, containerLayout: {}, childLayout: { flexGrow: 1 },
+            children: [
+              { type: "Text", rect: { x: 290, y: 36, w: 20, h: 15 }, visual: { content: "B" }, containerLayout: {} }
+            ] }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var p = result.properties || {};
+
+      assert.ok(p.backgroundColor && p.backgroundColor.toLowerCase() === "#ffffffff", "bg color preserved");
+      assert.strictEqual(p.paddingBottom, 34, "bottom safe-area padding preserved");
+    }
+  },
+  {
+    name: "handleBottomNavigationBar: descendant Text gets sizingH=FILL + textAlign=center",
+    fn: function() {
+      var node = {
+        type: "Frame", properties: {},
+        children: [{
+          type: "Frame", properties: {},
+          children: [
+            { type: "Frame", properties: { isIconBox: true } },
+            { type: "Text", properties: { content: "Tab Label", textAlign: "start" } },
+          ]
+        }]
+      };
+      P.handleBottomNavigationBar(node);
+      // Walk to find Text
+      var text = node.children[0].children[1];
+      assert.strictEqual(text.properties.sizingH, "FILL",
+        "BottomNav label text should be FILL");
+      assert.strictEqual(text.properties.textAlign, "center",
+        "BottomNav label text should be center-aligned");
+    }
+  },
+  {
+    name: "handleBottomNavigationBar: long label (Widget Test) gets FILL → truncates naturally",
+    fn: function() {
+      var node = {
+        type: "Frame", properties: {},
+        children: [{
+          type: "Frame", properties: {},
+          rect: { w: 69 },
+          children: [
+            { type: "Frame", properties: { isIconBox: true } },
+            { type: "Text", properties: { content: "Widget Test", textAlign: "start" },
+              rect: { w: 77 } }, // wider than parent!
+          ]
+        }]
+      };
+      P.handleBottomNavigationBar(node);
+      var text = node.children[0].children[1];
+      assert.strictEqual(text.properties.sizingH, "FILL",
+        "Long label should be FILL (will truncate in Figma when parent is narrower)");
+    }
+  },
+  {
+    name: "pipeline: BottomNavigationBar — icon fixedWidth removed after processing",
+    fn: function() {
+      var input = {
+        type: "Frame", layoutMode: "ROW",
+        rect: { x: 0, y: 0, w: 400, h: 80 },
+        widgetName: "BottomNavigationBar",
+        visual: {},
+        containerLayout: { mainAxisAlignment: "spaceBetween", crossAxisAlignment: "center" },
+        children: [
+          { type: "Frame", layoutMode: "COLUMN", rect: { x: 0, y: 0, w: 200, h: 56 },
+            visual: {}, containerLayout: {},
+            childLayout: { flexGrow: 1, fixedWidth: true },
+            children: [
+              { type: "Frame", rect: { x: 88, y: 7, w: 24, h: 24 },
+                visual: { isIconBox: true }, containerLayout: {},
+                childLayout: { fixedWidth: true, fixedHeight: true, fixedSize: true } },
+              { type: "Text", rect: { x: 90, y: 36, w: 20, h: 15 },
+                visual: { content: "Tab" }, containerLayout: {} }
+            ] }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      assert.strictEqual(result.children.length, 1);
+      var tabProps = result.children[0].properties || {};
+      assert.strictEqual(tabProps.fixedWidth, undefined, "fixedWidth removed from tab item");
+      assert.strictEqual(tabProps.flexGrow, 1, "flexGrow set");
     }
   },
 ];

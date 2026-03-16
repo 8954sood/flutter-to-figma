@@ -585,5 +585,23 @@ function handleBottomNavigationBar(node) {
     cp.crossAxisAlignment = "center";
     cp.mainAxisAlignment = "center";
     children[i].properties = cp;
+
+    // Descendant Text: FILL + center (fills tab width, truncates if too long)
+    _setBottomNavTextFill(children[i]);
+  }
+}
+
+function _setBottomNavTextFill(node) {
+  if (!node || typeof node !== "object") return;
+  if (node.type === "Text") {
+    var p = node.properties || {};
+    p.sizingH = "FILL";
+    p.textAlign = "center";
+    node.properties = p;
+    return;
+  }
+  var ch = node.children || [];
+  for (var i = 0; i < ch.length; i++) {
+    _setBottomNavTextFill(ch[i]);
   }
 }

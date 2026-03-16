@@ -284,7 +284,17 @@ function renderNode(node, parentFigma, parentLayoutDir) {
       try { figNode.layoutSizingVertical = "FIXED"; } catch(e) {}
       try {
         var intendedH = node._sizingH || "FIXED";
-        if (intendedH === "FILL") figNode.layoutSizingHorizontal = "FILL";
+        if (intendedH === "FILL") {
+          figNode.layoutSizingHorizontal = "FILL";
+        } else if (intendedH === "HUG" && !props.textTruncate) {
+          // HUG + maxLines/textOverflow only (no textTruncate): restore HUG
+          // textTruncate is set intentionally by preprocessing (e.g., toolbar title)
+          // maxLines/textOverflow come from Flutter widget props (e.g., bottom nav label)
+          figNode.textAutoResize = "WIDTH_AND_HEIGHT";
+          figNode.textTruncation = "DISABLED";
+          figNode.layoutSizingHorizontal = "HUG";
+          figNode.layoutSizingVertical = "HUG";
+        }
       } catch(e) {}
     }
   }

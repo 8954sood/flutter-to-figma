@@ -868,7 +868,7 @@ void main() {
   // ============================================================
 
   group('BottomNavigationBar', () {
-    testWidgets('has widgetName BottomNavigationBar', (tester) async {
+    testWidgets('has widgetName and ROW layout', (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: Text('Body'),
@@ -888,6 +888,146 @@ void main() {
         (n) => n['widgetName'] == 'BottomNavigationBar',
       );
       expect(navBar, isNotNull, reason: 'Should detect BottomNavigationBar');
+      expect(navBar!['layoutMode'], 'ROW');
+
+      final cl = navBar['containerLayout'] as Map<String, dynamic>? ?? {};
+      expect(cl['mainAxisAlignment'], contains('spaceBetween'));
+      expect(cl['crossAxisAlignment'], contains('center'));
+    });
+
+    testWidgets('children have flexGrow', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Text('Body'),
+          bottomNavigationBar: BottomNavigationBar(
+            items: [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.search), label: 'Search'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.settings), label: 'Settings'),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+      final navBar = findNode(
+        result,
+        (n) => n['widgetName'] == 'BottomNavigationBar',
+      );
+      expect(navBar, isNotNull);
+
+      final children = (navBar!['children'] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      expect(children.length, greaterThanOrEqualTo(3));
+
+      for (final child in children) {
+        final childLay = child['childLayout'] as Map<String, dynamic>? ?? {};
+        expect(childLay['flexGrow'], greaterThan(0),
+            reason: 'Tab item should have flexGrow > 0');
+      }
+    });
+
+    testWidgets('preserves label texts and icons', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Text('Body'),
+          bottomNavigationBar: BottomNavigationBar(
+            items: [
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.home), label: 'Dashboard'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.person), label: 'Profile'),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+      final navBar = findNode(
+        result,
+        (n) => n['widgetName'] == 'BottomNavigationBar',
+      );
+      expect(navBar, isNotNull);
+
+      // Labels
+      final labels = findAllNodes(navBar!, (n) {
+        final vis = n['visual'] as Map<String, dynamic>? ?? {};
+        return n['type'] == 'Text' && vis['content'] != null;
+      });
+      final labelTexts =
+          labels.map((n) => (n['visual'] as Map)['content']).toList();
+      expect(labelTexts, contains('Dashboard'));
+      expect(labelTexts, contains('Profile'));
+
+      // Icons
+      final icons = findAllNodes(navBar, (n) {
+        final vis = n['visual'] as Map<String, dynamic>? ?? {};
+        return vis['isIconBox'] == true;
+      });
+      expect(icons.length, greaterThanOrEqualTo(2),
+          reason: 'Should have at least 2 icon nodes');
+    });
+
+    testWidgets('has bottom padding (safe area)', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Text('Body'),
+          bottomNavigationBar: BottomNavigationBar(
+            items: [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'A'),
+              BottomNavigationBarItem(icon: Icon(Icons.star), label: 'B'),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+      final navBar = findNode(
+        result,
+        (n) => n['widgetName'] == 'BottomNavigationBar',
+      );
+      expect(navBar, isNotNull);
+
+      final cl = navBar!['containerLayout'] as Map<String, dynamic>? ?? {};
+      final padding = cl['padding'] as Map<String, dynamic>?;
+      expect(padding, isNotNull, reason: 'Should have padding structure');
+    });
+
+    testWidgets('backgroundColor preserved', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: ThemeData(
+          bottomNavigationBarTheme: BottomNavigationBarThemeData(
+            backgroundColor: Color(0xFF1A1A2E),
+          ),
+        ),
+        home: Scaffold(
+          body: Text('Body'),
+          bottomNavigationBar: BottomNavigationBar(
+            backgroundColor: Color(0xFF1A1A2E),
+            selectedItemColor: Colors.white,
+            unselectedItemColor: Colors.grey,
+            items: [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.settings), label: 'Settings'),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+      final navBar = findNode(
+        result,
+        (n) => n['widgetName'] == 'BottomNavigationBar',
+      );
+      expect(navBar, isNotNull);
+
+      final vis = navBar!['visual'] as Map<String, dynamic>? ?? {};
+      expect(vis['backgroundColor'], isNotNull,
+          reason: 'Should preserve backgroundColor');
     });
   });
 
