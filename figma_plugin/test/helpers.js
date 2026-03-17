@@ -9,11 +9,12 @@ function loadPipeline() {
     "_00_utils.js",
     "_02_schema.js",
     "_03_flatten_merge.js",
-    "_04_named_widgets.js",
-    "_05_layout_inference.js",
-    "_06_spacers_cleanup.js",
-    "_07_sizing.js",
-    "_08_helpers.js",
+    "_04_overlay_detect.js",
+    "_05_named_widgets.js",
+    "_06_layout_inference.js",
+    "_07_spacers_cleanup.js",
+    "_08_sizing.js",
+    "_09_helpers.js",
   ];
 
   var combined = "";
@@ -46,7 +47,10 @@ function loadPipeline() {
   combined += "  shouldStopChain: shouldStopChain,\n";
   combined += "  calculateImplicitPadding: calculateImplicitPadding,\n";
   combined += "  mergeChainIntoInnermost: mergeChainIntoInnermost,\n";
-  combined += "  // _04_named_widgets\n";
+  combined += "  // _04_overlay_detect\n";
+  combined += "  isScrimNode: isScrimNode,\n";
+  combined += "  detectOverlays: detectOverlays,\n";
+  combined += "  // _05_named_widgets\n";
   combined += "  preprocessNamedWidgets: preprocessNamedWidgets,\n";
   combined += "  handleListTile: handleListTile,\n";
   combined += "  handleChip: handleChip,\n";
@@ -68,11 +72,11 @@ function loadPipeline() {
   combined += "  applyAlignByLayoutDir: applyAlignByLayoutDir,\n";
   combined += "  buildCenteredToolbar: buildCenteredToolbar,\n";
   combined += "  buildLeftAlignedToolbar: buildLeftAlignedToolbar,\n";
-  combined += "  // _05_layout_inference\n";
+  combined += "  // _06_layout_inference\n";
   combined += "  sortChildrenByAxis: sortChildrenByAxis,\n";
   combined += "  isMonotonicallyIncreasing: isMonotonicallyIncreasing,\n";
   combined += "  inferMissingLayout: inferMissingLayout,\n";
-  combined += "  // _06_spacers_cleanup\n";
+  combined += "  // _07_spacers_cleanup\n";
   combined += "  isSpacer: isSpacer,\n";
   combined += "  mostCommonValue: mostCommonValue,\n";
   combined += "  convertSpacersToItemSpacing: convertSpacersToItemSpacing,\n";
@@ -81,14 +85,14 @@ function loadPipeline() {
   combined += "  recalcItemSpacing: recalcItemSpacing,\n";
   combined += "  convertEdgeEmptyFramesToPadding: convertEdgeEmptyFramesToPadding,\n";
   combined += "  capPaddingToRect: capPaddingToRect,\n";
-  combined += "  // _07_sizing\n";
+  combined += "  // _08_sizing\n";
   combined += "  assignSizingHints: assignSizingHints,\n";
   combined += "  assignImageSizing: assignImageSizing,\n";
   combined += "  assignTextSizing: assignTextSizing,\n";
   combined += "  assignFrameSizing: assignFrameSizing,\n";
   combined += "  applySizedBoxOverrides: applySizedBoxOverrides,\n";
   combined += "  propagateWrapFlags: propagateWrapFlags,\n";
-  combined += "  // _08_helpers\n";
+  combined += "  // _09_helpers\n";
   combined += "  isTransparent: isTransparent,\n";
   combined += "  generateNodeName: generateNodeName,\n";
   combined += "  parseBorderRadius: parseBorderRadius,\n";
@@ -104,6 +108,7 @@ function runPreprocess(input) {
   P.normalizeSchemaV2(data);
   data = P.flattenEmptyWrappers(data);
   data = P.mergeWrapperChains(data);
+  P.detectOverlays(data);
   P.preprocessNamedWidgets(data);
   P.inferMissingLayout(data);
   P.convertSpacersToItemSpacing(data);

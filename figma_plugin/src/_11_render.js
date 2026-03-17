@@ -21,6 +21,7 @@ async function renderWholeLayout(root) {
   if (!screen) throw new Error("루트 노드가 전처리 중 제거되었습니다.");
 
   mergeWrapperChains(screen);
+  detectOverlays(screen);
   preprocessNamedWidgets(screen);
   inferMissingLayout(screen);
   convertSpacersToItemSpacing(screen);

@@ -690,6 +690,7 @@ void _collectDesignInfoFromElements(Element element) {
     'CheckboxListTile',
     'RadioListTile',
     'BackButton',
+    'ModalBarrier',
   };
   if (namedWidgets.contains(widgetTypeName)) {
     final ro = element.renderObject;
