@@ -284,4 +284,111 @@ module.exports = [
       assert.strictEqual(stackNode.rect.h, 914);
     }
   },
+  // ============================================================
+  // Route transition + overlay (dual ModalBarrier)
+  // ============================================================
+  {
+    name: "detectOverlays: route transition + bottom sheet — dual ModalBarrier",
+    fn: function() {
+      // Navigator pattern: [transparent, ModalBarrier1(route), Scaffold, ModalBarrier2(sheet), bottomSheet]
+      var node = {
+        type: "Frame",
+        rect: { x: 0, y: 0, w: 411, h: 914 },
+        properties: {},
+        children: [
+          // Route transition transparent frame
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+            properties: { backgroundColor: "#00000000", opacity: 1.0 }, children: [] },
+          // First ModalBarrier (route transition)
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+            widgetName: "ModalBarrier", properties: {}, children: [] },
+          // Main page (Scaffold)
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+            widgetName: "Scaffold",
+            properties: { layoutMode: "VERTICAL", backgroundColor: "#ffffffff" },
+            children: [
+              { type: "Text", rect: { x: 16, y: 100, w: 200, h: 20 },
+                properties: { content: "Main Page" } }
+            ] },
+          // Second ModalBarrier (bottom sheet scrim)
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+            widgetName: "ModalBarrier",
+            properties: { backgroundColor: "#8a000000" }, children: [] },
+          // Bottom sheet
+          { type: "Frame", rect: { x: 0, y: 500, w: 411, h: 414 },
+            properties: { layoutMode: "VERTICAL", backgroundColor: "#ffffffff" },
+            children: [
+              { type: "Text", rect: { x: 16, y: 510, w: 200, h: 20 },
+                properties: { content: "Sheet Content" } }
+            ] },
+        ]
+      };
+
+      P.detectOverlays(node);
+
+      // Should become a STACK (from second ModalBarrier detection)
+      assert.strictEqual(node.properties.isStack, true,
+        "node should become a Stack after overlay detection");
+
+      // Main content (Scaffold) should exist
+      var mainText = helpers.findNode(node, function(n) {
+        return (n.properties || {}).content === "Main Page";
+      });
+      assert.notStrictEqual(mainText, null, "Main page content should survive");
+
+      // Bottom sheet content should exist
+      var sheetText = helpers.findNode(node, function(n) {
+        return (n.properties || {}).content === "Sheet Content";
+      });
+      assert.notStrictEqual(sheetText, null, "Sheet content should survive");
+
+      // Route transition transparent frame should be gone
+      var transparentFrame = null;
+      for (var i = 0; i < node.children.length; i++) {
+        var c = node.children[i];
+        var bg = (c.properties || {}).backgroundColor || "";
+        if (bg === "#00000000" && (c.children || []).length === 0) {
+          transparentFrame = c;
+          break;
+        }
+      }
+      assert.strictEqual(transparentFrame, null,
+        "Route transition transparent frame should be filtered");
+    }
+  },
+  {
+    name: "detectOverlays: route transition only (no overlay) — Scaffold promoted, not Stack",
+    fn: function() {
+      // Navigator pattern with only route transition, no bottom sheet/dialog
+      var node = {
+        type: "Frame",
+        rect: { x: 0, y: 0, w: 411, h: 914 },
+        properties: {},
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+            properties: { backgroundColor: "#00000000" }, children: [] },
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+            widgetName: "ModalBarrier", properties: {}, children: [] },
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+            widgetName: "Scaffold",
+            properties: { layoutMode: "VERTICAL", backgroundColor: "#ffffffff" },
+            children: [
+              { type: "Text", rect: { x: 16, y: 100, w: 200, h: 20 },
+                properties: { content: "Page Content" } }
+            ] },
+        ]
+      };
+
+      P.detectOverlays(node);
+
+      // Should NOT become a Stack — just a route transition
+      assert.notStrictEqual(node.properties.isStack, true,
+        "Route transition only should NOT create a Stack");
+
+      // Scaffold should be the only child
+      assert.strictEqual(node.children.length, 1,
+        "Only Scaffold should remain after route transition cleanup");
+      assert.strictEqual(node.children[0].widgetName, "Scaffold");
+    }
+  },
 ];

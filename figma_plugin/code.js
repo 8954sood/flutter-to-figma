@@ -340,6 +340,8 @@ function flattenEmptyWrappers(node) {
   }
 
   if (node.type !== "Frame") return node;
+  // widgetName이 있는 노드는 보존 (ModalBarrier 등 detectOverlays에서 필요)
+  if (node.widgetName) return node;
   if (!isEmptyProps(node.properties)) return node;
 
   var children = node.children || [];
@@ -775,6 +777,17 @@ function detectOverlays(node) {
     };
   } else {
     overlayWrapper = null;
+  }
+
+  // mainWrapper가 없으면 일반 라우트 전환 (overlay 아님)
+  // → ModalBarrier와 빈 프레임 제거, after 콘텐츠만 남김
+  // 이후 남은 자식에 바텀시트/다이얼로그 overlay가 있을 수 있으므로 재처리
+  if (!mainWrapper) {
+    if (after.length > 0) {
+      node.children = after;
+      detectOverlays(node);
+    }
+    return;
   }
 
   // Determine overlay position (bottom sheet vs dialog)
@@ -1971,6 +1984,11 @@ function propagateExpandedFill(node, props, children, parentProps) {
   if (node.type !== "Frame" || !props.layoutMode) return;
   if (!parentProps) return;
   if (props.fixedSize || props.isIconBox || props.isSvgBox) return;
+
+  // 부모가 end/center 정렬이면 전파 중단 — 자식을 배치(positioning)하는 부모이므로
+  // 자식이 FILL이 되면 바텀시트/다이얼로그가 전체 화면으로 확장됨
+  var parentMainAlign = String(parentProps.mainAxisAlignment || "");
+  if (parentMainAlign.indexOf("end") !== -1 || parentMainAlign.indexOf("center") !== -1) return;
 
   var layoutDir = props.layoutMode;
   var isVert = layoutDir === "VERTICAL" || layoutDir === "COLUMN";

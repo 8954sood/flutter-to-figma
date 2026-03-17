@@ -84,6 +84,17 @@ function detectOverlays(node) {
     overlayWrapper = null;
   }
 
+  // mainWrapper가 없으면 일반 라우트 전환 (overlay 아님)
+  // → ModalBarrier와 빈 프레임 제거, after 콘텐츠만 남김
+  // 이후 남은 자식에 바텀시트/다이얼로그 overlay가 있을 수 있으므로 재처리
+  if (!mainWrapper) {
+    if (after.length > 0) {
+      node.children = after;
+      detectOverlays(node);
+    }
+    return;
+  }
+
   // Determine overlay position (bottom sheet vs dialog)
   if (overlayWrapper) {
     var overlayChild = (overlayWrapper.children && overlayWrapper.children.length > 0)

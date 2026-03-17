@@ -1903,6 +1903,67 @@ module.exports = [
     }
   },
   {
+    name: "sizing: FILL does NOT propagate into end/center aligned parent (bottom sheet)",
+    fn: function() {
+      // Overlay wrapper (justify:flex-end) > sheet Column > [header, Expanded list, button]
+      // Expanded list has FILL, but sheet should NOT become FILL (would expand to full screen)
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+        properties: { layoutMode: "VERTICAL", mainAxisAlignment: "end", isStack: true },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 500, w: 411, h: 414 },
+            properties: { layoutMode: "VERTICAL" },
+            children: [
+              { type: "Frame", rect: { x: 0, y: 500, w: 411, h: 64 },
+                properties: {}, children: [] },
+              { type: "Frame", rect: { x: 0, y: 564, w: 411, h: 266 },
+                properties: { flexGrow: 1, flexFit: "FlexFit.tight", layoutMode: "VERTICAL" },
+                children: [] },
+              { type: "Frame", rect: { x: 0, y: 830, w: 411, h: 84 },
+                properties: {}, children: [] },
+            ]
+          },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      var sheet = tree.children[0];
+      var expandedList = sheet.children[1];
+
+      assert.strictEqual(expandedList._sizingV, "FILL",
+        "Expanded list inside sheet should be FILL");
+      assert.notStrictEqual(sheet._sizingV, "FILL",
+        "Sheet should NOT become FILL — parent has mainAxisAlignment=end");
+    }
+  },
+  {
+    name: "sizing: FILL does NOT propagate into center aligned parent (dialog)",
+    fn: function() {
+      // Dialog overlay (justify:center) > dialog frame > [title, Expanded content, buttons]
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+        properties: { layoutMode: "VERTICAL", mainAxisAlignment: "center" },
+        children: [
+          { type: "Frame", rect: { x: 50, y: 200, w: 311, h: 400 },
+            properties: { layoutMode: "VERTICAL" },
+            children: [
+              { type: "Frame", rect: { x: 50, y: 200, w: 311, h: 50 },
+                properties: {}, children: [] },
+              { type: "Frame", rect: { x: 50, y: 250, w: 311, h: 300 },
+                properties: { flexGrow: 1, flexFit: "FlexFit.tight", layoutMode: "VERTICAL" },
+                children: [] },
+              { type: "Frame", rect: { x: 50, y: 550, w: 311, h: 50 },
+                properties: {}, children: [] },
+            ]
+          },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      var dialog = tree.children[0];
+      assert.notStrictEqual(dialog._sizingV, "FILL",
+        "Dialog should NOT become FILL — parent has mainAxisAlignment=center");
+    }
+  },
+  {
     name: "sizing: FILL does NOT propagate across axis — Row spacer in Column",
     fn: function() {
       // Column > Row > [Text, Spacer(FILL H), Button]

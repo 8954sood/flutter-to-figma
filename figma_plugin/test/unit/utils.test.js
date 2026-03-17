@@ -325,6 +325,108 @@ module.exports = [
       assert.strictEqual(result.widgetName, "MyWidget");
     }
   },
+  {
+    name: "flattenEmptyWrappers: widgetName node preserved even with empty props + 0 children",
+    fn: function() {
+      // ModalBarrier: empty props, 0 children, large size, but has widgetName
+      // Must NOT be removed — detectOverlays needs it
+      var node = {
+        type: "Frame", properties: {},
+        widgetName: "ModalBarrier",
+        rect: { x: 0, y: 0, w: 411, h: 914 },
+        children: []
+      };
+      var result = P.flattenEmptyWrappers(node);
+      assert.notStrictEqual(result, null,
+        "ModalBarrier should NOT be removed even with empty props + 0 children");
+      assert.strictEqual(result.widgetName, "ModalBarrier");
+    }
+  },
+  {
+    name: "flattenEmptyWrappers: widgetName node with 1 child is NOT flattened",
+    fn: function() {
+      // widgetName node should be preserved as a wrapper, not promoted to child
+      var node = {
+        type: "Frame", properties: {},
+        widgetName: "AppBar",
+        rect: { x: 0, y: 0, w: 411, h: 80 },
+        children: [{ type: "Frame", properties: { layoutMode: "VERTICAL" }, children: [] }]
+      };
+      var result = P.flattenEmptyWrappers(node);
+      assert.strictEqual(result.type, "Frame");
+      assert.strictEqual(result.widgetName, "AppBar",
+        "widgetName wrapper should be preserved, not flattened into child");
+      assert.strictEqual(result.children.length, 1);
+    }
+  },
+  {
+    name: "pipeline: Navigator overlay — ModalBarrier preserved, empty transparent frame filtered",
+    fn: function() {
+      // Real pattern: Screen > NONE(Stack) > [transparent_empty, ModalBarrier, Scaffold]
+      // ModalBarrier must survive flattenEmptyWrappers for detectOverlays to work
+      var input = {
+        type: "Frame", layoutMode: "COLUMN",
+        rect: { x: 0, y: 0, w: 411, h: 914 },
+        visual: { backgroundColor: "#ffffffff" },
+        containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "stretch", mainAxisSize: "max" },
+        children: [{
+          type: "Frame", layoutMode: "NONE",
+          rect: { x: 0, y: 0, w: 411, h: 914 },
+          visual: {},
+          containerLayout: {},
+          children: [
+            // transparent empty frame (route barrier background)
+            { type: "Frame", layoutMode: "NONE",
+              rect: { x: 0, y: 0, w: 411, h: 914 },
+              visual: { backgroundColor: "#00000000", opacity: 1.0 },
+              containerLayout: {},
+              children: [] },
+            // ModalBarrier
+            { type: "Frame", layoutMode: "NONE",
+              rect: { x: 0, y: 0, w: 411, h: 914 },
+              visual: {},
+              containerLayout: {},
+              children: [],
+              widgetName: "ModalBarrier" },
+            // Scaffold (actual content)
+            { type: "Frame", layoutMode: "COLUMN",
+              rect: { x: 0, y: 0, w: 411, h: 914 },
+              visual: { backgroundColor: "#ffffffff" },
+              containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "stretch", mainAxisSize: "max" },
+              children: [
+                { type: "Text", rect: { x: 16, y: 100, w: 200, h: 20 },
+                  visual: { content: "Page Content" }, containerLayout: {} }
+              ],
+              widgetName: "Scaffold" }
+          ]
+        }]
+      };
+      var result = helpers.runPreprocess(input);
+
+      // The transparent empty frame should be gone
+      // The ModalBarrier should be gone (processed by detectOverlays)
+      // The Scaffold content should be the main output
+      var textNode = helpers.findNode(result, function(n) {
+        var p = n.properties || {};
+        return p.content === "Page Content";
+      });
+      assert.notStrictEqual(textNode, null,
+        "Scaffold content should survive preprocessing");
+
+      // No empty 411x914 frame should remain as a visible sibling
+      var emptyFullScreen = helpers.findNode(result, function(n) {
+        if (n.type !== "Frame") return false;
+        var r = n.rect || {};
+        var children = n.children || [];
+        var p = n.properties || {};
+        return children.length === 0 && !p.isStack &&
+          Math.abs((r.w || 0) - 411) < 1 && Math.abs((r.h || 0) - 914) < 1 &&
+          !n.widgetName;
+      });
+      assert.strictEqual(emptyFullScreen, null,
+        "Transparent empty full-screen frame should be filtered out");
+    }
+  },
   // ============================================================
   // mergeChainIntoInnermost
   // ============================================================

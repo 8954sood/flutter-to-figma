@@ -150,6 +150,11 @@ function propagateExpandedFill(node, props, children, parentProps) {
   if (!parentProps) return;
   if (props.fixedSize || props.isIconBox || props.isSvgBox) return;
 
+  // 부모가 end/center 정렬이면 전파 중단 — 자식을 배치(positioning)하는 부모이므로
+  // 자식이 FILL이 되면 바텀시트/다이얼로그가 전체 화면으로 확장됨
+  var parentMainAlign = String(parentProps.mainAxisAlignment || "");
+  if (parentMainAlign.indexOf("end") !== -1 || parentMainAlign.indexOf("center") !== -1) return;
+
   var layoutDir = props.layoutMode;
   var isVert = layoutDir === "VERTICAL" || layoutDir === "COLUMN";
   var isHoriz = layoutDir === "HORIZONTAL" || layoutDir === "ROW";

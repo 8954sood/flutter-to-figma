@@ -21,6 +21,8 @@ function flattenEmptyWrappers(node) {
   }
 
   if (node.type !== "Frame") return node;
+  // widgetName이 있는 노드는 보존 (ModalBarrier 등 detectOverlays에서 필요)
+  if (node.widgetName) return node;
   if (!isEmptyProps(node.properties)) return node;
 
   var children = node.children || [];
