@@ -1214,7 +1214,7 @@ module.exports = [
   // assignSizingHints: flexGrow + sizing combinations
   // ============================================================
   {
-    name: "sizing: Frame + flexGrow > 0 → FIXED (rect size preserved)",
+    name: "sizing: Frame + flexGrow > 0 → FILL (sole flex child)",
     fn: function() {
       var tree = {
         type: "Frame", rect: { x: 0, y: 0, w: 400, h: 300 },
@@ -1226,8 +1226,8 @@ module.exports = [
         ]
       };
       P.assignSizingHints(tree, null, null);
-      // flexGrow → FIXED (Flutter rect size used for Figma)
-      assert.strictEqual(tree.children[0]._sizingH, "FIXED");
+      // sole flexGrow child → FILL (Figma responsive)
+      assert.strictEqual(tree.children[0]._sizingH, "FILL");
     }
   },
   {
@@ -1582,10 +1582,452 @@ module.exports = [
         ]
       };
       var result = helpers.runPreprocess(input);
-      // The Expanded child should have FIXED sizing (flexGrow → rect-based)
-      // In our system, flexGrow > 0 → FIXED (line 75-77 in _08_sizing.js)
       var expandedChild = result.children[1];
       assert.notStrictEqual(expandedChild, undefined);
+    }
+  },
+  // ============================================================
+  // Expanded → FILL (sole flex child) vs FIXED (multiple flex)
+  // ============================================================
+  {
+    name: "sizing: sole Expanded in VERTICAL → sizingV=FILL",
+    fn: function() {
+      // Column with: fixed header + Expanded(content) + fixed footer
+      // Expanded is the ONLY flex child → should get FILL on main axis (V)
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 400, h: 800 },
+        properties: { layoutMode: "VERTICAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 400, h: 50 },
+            properties: {} },
+          { type: "Frame", rect: { x: 0, y: 50, w: 400, h: 700 },
+            properties: { flexGrow: 1, flexFit: "FlexFit.tight", layoutMode: "VERTICAL" },
+            children: [] },
+          { type: "Frame", rect: { x: 0, y: 750, w: 400, h: 50 },
+            properties: {} },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      assert.strictEqual(tree.children[1]._sizingV, "FILL",
+        "sole Expanded child should get FILL on main axis");
+      assert.strictEqual(tree.children[0]._sizingV, "FIXED",
+        "non-flex sibling should stay FIXED");
+      assert.strictEqual(tree.children[2]._sizingV, "FIXED",
+        "non-flex sibling should stay FIXED");
+    }
+  },
+  {
+    name: "sizing: sole Expanded in HORIZONTAL → sizingH=FILL",
+    fn: function() {
+      // Row with: icon + Expanded(text area) + button
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 400, h: 50 },
+        properties: { layoutMode: "HORIZONTAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 40, h: 50 },
+            properties: {} },
+          { type: "Frame", rect: { x: 40, y: 0, w: 280, h: 50 },
+            properties: { flexGrow: 1, flexFit: "FlexFit.tight" },
+            children: [] },
+          { type: "Frame", rect: { x: 320, y: 0, w: 80, h: 50 },
+            properties: {} },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      assert.strictEqual(tree.children[1]._sizingH, "FILL",
+        "sole Expanded in Row should get FILL on H");
+    }
+  },
+  {
+    name: "sizing: multiple Expanded siblings → all FIXED (ratio preservation)",
+    fn: function() {
+      // Row with two Expanded children (flex:1, flex:2) → must stay FIXED
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 400, h: 100 },
+        properties: { layoutMode: "HORIZONTAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 133, h: 100 },
+            properties: { flexGrow: 1, flexFit: "FlexFit.tight" },
+            children: [] },
+          { type: "Frame", rect: { x: 133, y: 0, w: 267, h: 100 },
+            properties: { flexGrow: 2, flexFit: "FlexFit.tight" },
+            children: [] },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      assert.strictEqual(tree.children[0]._sizingH, "FIXED",
+        "first Expanded should stay FIXED when siblings also have flexGrow");
+      assert.strictEqual(tree.children[1]._sizingH, "FIXED",
+        "second Expanded should stay FIXED when siblings also have flexGrow");
+    }
+  },
+  {
+    name: "sizing: sole Expanded + cross=stretch → FILL both axes",
+    fn: function() {
+      // Column(stretch) with: header + Expanded(content)
+      // sole flex → V=FILL, stretch → H=FILL
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 400, h: 800 },
+        properties: { layoutMode: "VERTICAL", crossAxisAlignment: "stretch" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 400, h: 60 },
+            properties: {} },
+          { type: "Frame", rect: { x: 0, y: 60, w: 400, h: 740 },
+            properties: { flexGrow: 1, flexFit: "FlexFit.tight", layoutMode: "VERTICAL" },
+            children: [] },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      assert.strictEqual(tree.children[1]._sizingV, "FILL",
+        "sole Expanded main axis should be FILL");
+      assert.strictEqual(tree.children[1]._sizingH, "FILL",
+        "stretch cross axis should be FILL");
+    }
+  },
+  {
+    name: "sizing: Flexible(loose) sole child → stays FIXED (not tight)",
+    fn: function() {
+      // Flexible (loose fit) should NOT get FILL even if sole flex child
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 400, h: 800 },
+        properties: { layoutMode: "VERTICAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 400, h: 50 },
+            properties: {} },
+          { type: "Frame", rect: { x: 0, y: 50, w: 400, h: 300 },
+            properties: { flexGrow: 1, flexFit: "FlexFit.loose" },
+            children: [] },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      assert.strictEqual(tree.children[1]._sizingV, "FIXED",
+        "Flexible(loose) should stay FIXED even if sole");
+    }
+  },
+  {
+    name: "pipeline: Expanded + fixed footer — Expanded gets FILL",
+    fn: function() {
+      // Full pipeline: Column > [Expanded(ScrollContent), Column(footer)]
+      var input = {
+        type: "Frame", rect: { x: 0, y: 0, w: 411, h: 800 },
+        layoutMode: "COLUMN",
+        visual: {},
+        containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "stretch", mainAxisSize: "max" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 700 },
+            layoutMode: "COLUMN",
+            visual: {},
+            containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "stretch" },
+            childLayout: { flexGrow: 1, sizingH: "FILL", sizingV: "FILL" },
+            children: [
+              { type: "Text", rect: { x: 16, y: 16, w: 200, h: 20 },
+                visual: { content: "Scroll content" }, containerLayout: {} }
+            ]
+          },
+          { type: "Frame", rect: { x: 0, y: 700, w: 411, h: 100 },
+            layoutMode: "COLUMN",
+            visual: { backgroundColor: "#FFFFFFFF" },
+            containerLayout: { mainAxisAlignment: "start", mainAxisSize: "min" },
+            childLayout: { flexGrow: 0, sizingH: "HUG", sizingV: "HUG" },
+            children: [
+              { type: "Text", rect: { x: 16, y: 710, w: 100, h: 20 },
+                visual: { content: "Footer" }, containerLayout: {} }
+            ]
+          }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      // Find the Expanded child (flexGrow > 0)
+      var expandedChild = null;
+      var fixedChild = null;
+      for (var i = 0; i < result.children.length; i++) {
+        var p = result.children[i].properties || {};
+        if (p.flexGrow > 0) expandedChild = result.children[i];
+        else fixedChild = result.children[i];
+      }
+      assert.notStrictEqual(expandedChild, null, "should find Expanded child");
+      assert.strictEqual(expandedChild._sizingV, "FILL",
+        "sole Expanded in pipeline should get FILL on main axis");
+      if (fixedChild) {
+        assert.notStrictEqual(fixedChild._sizingV, "FILL",
+          "non-flex footer should not be FILL");
+      }
+    }
+  },
+  // ============================================================
+  // FILL propagation: parent of Expanded child should also FILL
+  // ============================================================
+  {
+    name: "sizing: FILL propagates upward — wrapper of Expanded becomes FILL",
+    fn: function() {
+      // Screen > body Column > [AppBar, contentColumn > [Expanded, Audio]]
+      // contentColumn has no flexGrow but wraps an Expanded child → should become FILL
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+        properties: { layoutMode: "VERTICAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 800 },
+            properties: { layoutMode: "VERTICAL" },
+            children: [
+              { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 80 },
+                properties: {} },
+              { type: "Frame", rect: { x: 0, y: 80, w: 411, h: 720 },
+                properties: { layoutMode: "VERTICAL" },
+                children: [
+                  { type: "Frame", rect: { x: 0, y: 80, w: 411, h: 582 },
+                    properties: { flexGrow: 1, flexFit: "FlexFit.tight", layoutMode: "VERTICAL" },
+                    children: [] },
+                  { type: "Frame", rect: { x: 0, y: 662, w: 411, h: 93 },
+                    properties: { layoutMode: "VERTICAL" },
+                    children: [] },
+                ]
+              },
+            ]
+          },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      var body = tree.children[0]; // 800px
+      var content = body.children[1]; // 720px wrapper
+      var expanded = content.children[0]; // 582px Expanded
+
+      assert.strictEqual(expanded._sizingV, "FILL",
+        "Expanded child should be FILL");
+      assert.strictEqual(content._sizingV, "FILL",
+        "wrapper around Expanded should propagate to FILL");
+      assert.strictEqual(body._sizingV, "FILL",
+        "body containing FILL descendant should also FILL");
+    }
+  },
+  {
+    name: "sizing: FILL propagation stops at root (no parent)",
+    fn: function() {
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 400, h: 800 },
+        properties: { layoutMode: "VERTICAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 400, h: 700 },
+            properties: { flexGrow: 1, flexFit: "FlexFit.tight" },
+            children: [] },
+          { type: "Frame", rect: { x: 0, y: 700, w: 400, h: 100 },
+            properties: {}, children: [] },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      // Root node should not be FILL (no parent to fill into)
+      assert.strictEqual(tree._sizingV, "FIXED",
+        "root should stay FIXED — nothing above to fill");
+    }
+  },
+  {
+    name: "sizing: FILL does NOT propagate when all children are FIXED",
+    fn: function() {
+      // No Expanded child → parent stays FIXED
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 400, h: 800 },
+        properties: { layoutMode: "VERTICAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 400, h: 400 },
+            properties: { layoutMode: "VERTICAL" },
+            children: [
+              { type: "Frame", rect: { x: 0, y: 0, w: 400, h: 200 },
+                properties: {}, children: [] },
+              { type: "Frame", rect: { x: 0, y: 200, w: 400, h: 200 },
+                properties: {}, children: [] },
+            ]
+          },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      assert.strictEqual(tree.children[0]._sizingV, "FIXED",
+        "no Expanded descendant → stays FIXED");
+    }
+  },
+  {
+    name: "sizing: FILL propagation in HORIZONTAL direction",
+    fn: function() {
+      // Row > [wrapper Row > [Expanded, fixed], sidebar]
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 800, h: 400 },
+        properties: { layoutMode: "HORIZONTAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 600, h: 400 },
+            properties: { layoutMode: "HORIZONTAL" },
+            children: [
+              { type: "Frame", rect: { x: 0, y: 0, w: 500, h: 400 },
+                properties: { flexGrow: 1, flexFit: "FlexFit.tight" },
+                children: [] },
+              { type: "Frame", rect: { x: 500, y: 0, w: 100, h: 400 },
+                properties: {}, children: [] },
+            ]
+          },
+          { type: "Frame", rect: { x: 600, y: 0, w: 200, h: 400 },
+            properties: {}, children: [] },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      var wrapper = tree.children[0];
+      var expanded = wrapper.children[0];
+      assert.strictEqual(expanded._sizingH, "FILL",
+        "Expanded in Row → FILL horizontal");
+      assert.strictEqual(wrapper._sizingH, "FILL",
+        "wrapper of Expanded → FILL horizontal");
+    }
+  },
+  {
+    name: "sizing: FILL propagation does NOT affect cross axis",
+    fn: function() {
+      // Vertical Column with Expanded child — propagation on V only, H unaffected
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 400, h: 800 },
+        properties: { layoutMode: "VERTICAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 400, h: 700 },
+            properties: { layoutMode: "VERTICAL" },
+            children: [
+              { type: "Frame", rect: { x: 0, y: 0, w: 400, h: 600 },
+                properties: { flexGrow: 1, flexFit: "FlexFit.tight" },
+                children: [] },
+              { type: "Frame", rect: { x: 0, y: 600, w: 400, h: 100 },
+                properties: {}, children: [] },
+            ]
+          },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      var wrapper = tree.children[0];
+      assert.strictEqual(wrapper._sizingV, "FILL",
+        "main axis propagates to FILL");
+      assert.strictEqual(wrapper._sizingH, "FIXED",
+        "cross axis stays FIXED (no stretch)");
+    }
+  },
+  {
+    name: "sizing: FILL does NOT propagate across axis — Row spacer in Column",
+    fn: function() {
+      // Column > Row > [Text, Spacer(FILL H), Button]
+      // Row has horizontal FILL child, but parent Column is VERTICAL
+      // → Row should NOT become FILL vertically
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 400, h: 800 },
+        properties: { layoutMode: "VERTICAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 400, h: 48 },
+            properties: { layoutMode: "HORIZONTAL" },
+            children: [
+              { type: "Text", rect: { x: 0, y: 0, w: 60, h: 20 },
+                properties: { content: "Label" } },
+              { type: "Frame", rect: { x: 60, y: 0, w: 280, h: 0.01 },
+                properties: { flexGrow: 1, flexFit: "FlexFit.tight" },
+                children: [] },
+              { type: "Frame", rect: { x: 340, y: 0, w: 60, h: 35 },
+                properties: {}, children: [] },
+            ]
+          },
+          { type: "Frame", rect: { x: 0, y: 48, w: 400, h: 200 },
+            properties: {}, children: [] },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      var row = tree.children[0];
+      assert.strictEqual(row._sizingV, "FIXED",
+        "Row with H spacer should NOT get V FILL from Column parent");
+      // The spacer should still be FILL horizontally
+      assert.strictEqual(row.children[1]._sizingH, "FILL",
+        "Spacer should be FILL horizontal");
+    }
+  },
+  {
+    name: "sizing: FILL propagates through HUG parent (mainAxisSize=AUTO wrapper)",
+    fn: function() {
+      // Real-world pattern: SafeArea > Column(AUTO) > Column > [Expanded, Footer]
+      // The AUTO wrapper has _sizingV=HUG but should become FILL
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+        properties: { layoutMode: "VERTICAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 834 },
+            properties: { layoutMode: "VERTICAL", mainAxisSize: "AUTO" },
+            children: [
+              { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 80 },
+                properties: {} },
+              { type: "Frame", rect: { x: 0, y: 80, w: 411, h: 696 },
+                properties: { layoutMode: "VERTICAL" },
+                children: [
+                  { type: "Frame", rect: { x: 0, y: 80, w: 411, h: 582 },
+                    properties: { flexGrow: 1, flexFit: "FlexFit.tight", layoutMode: "VERTICAL" },
+                    children: [] },
+                  { type: "Frame", rect: { x: 0, y: 662, w: 411, h: 93 },
+                    properties: { layoutMode: "VERTICAL" },
+                    children: [] },
+                ]
+              },
+            ]
+          },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      var autoWrapper = tree.children[0]; // 834px, mainAxisSize=AUTO → initially HUG
+      var contentCol = autoWrapper.children[1]; // 696px
+      var expanded = contentCol.children[0]; // 582px
+
+      assert.strictEqual(expanded._sizingV, "FILL",
+        "Expanded should be FILL");
+      assert.strictEqual(contentCol._sizingV, "FILL",
+        "content Column wrapping Expanded should be FILL");
+      assert.strictEqual(autoWrapper._sizingV, "FILL",
+        "AUTO/HUG wrapper should be overridden to FILL when child needs it");
+    }
+  },
+  {
+    name: "sizing: FILL propagation — full Scaffold pattern (AppBar + Expanded + BottomBar)",
+    fn: function() {
+      // Screen > SafeArea(VERTICAL) > [AppBar, Body(VERTICAL) > [Expanded(VERTICAL,scroll), AudioBar]]
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+        properties: { layoutMode: "VERTICAL" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 800 },
+            properties: { layoutMode: "VERTICAL" },
+            children: [
+              { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 80 },
+                properties: { layoutMode: "VERTICAL" },
+                children: [] },
+              { type: "Frame", rect: { x: 0, y: 80, w: 411, h: 720 },
+                properties: { layoutMode: "VERTICAL" },
+                children: [
+                  { type: "Frame", rect: { x: 0, y: 80, w: 411, h: 627 },
+                    properties: { flexGrow: 1, flexFit: "FlexFit.tight", layoutMode: "VERTICAL" },
+                    children: [
+                      { type: "Text", rect: { x: 16, y: 96, w: 200, h: 20 },
+                        properties: { content: "Scroll" } }
+                    ] },
+                  { type: "Frame", rect: { x: 0, y: 707, w: 411, h: 93 },
+                    properties: { layoutMode: "VERTICAL" },
+                    children: [] },
+                ]
+              },
+            ]
+          },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+
+      var safeArea = tree.children[0]; // 800px
+      var body = safeArea.children[1]; // 720px
+      var expanded = body.children[0]; // 627px
+      var audioBar = body.children[1]; // 93px
+
+      assert.strictEqual(expanded._sizingV, "FILL",
+        "Expanded scroll area should be FILL");
+      assert.strictEqual(audioBar._sizingV, "FIXED",
+        "AudioBar should stay FIXED");
+      assert.strictEqual(body._sizingV, "FILL",
+        "Body wrapping Expanded should propagate to FILL");
+      assert.strictEqual(safeArea._sizingV, "FILL",
+        "SafeArea should propagate to FILL");
+      assert.strictEqual(safeArea.children[0]._sizingV, "FIXED",
+        "AppBar should stay FIXED");
     }
   },
   // ============================================================

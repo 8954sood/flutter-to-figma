@@ -52,7 +52,7 @@ function assignTextSizing(node, parentLayoutMode, crossIsStretch, parentIsAutoSi
   }
 }
 
-function assignFrameSizing(node, props, crossIsStretch, parentIsAutoSize, parentLayoutMode) {
+function assignFrameSizing(node, props, crossIsStretch, parentIsAutoSize, parentLayoutMode, isSoleFlexChild) {
   node._sizingH = "FIXED";
   node._sizingV = "FIXED";
 
@@ -66,10 +66,15 @@ function assignFrameSizing(node, props, crossIsStretch, parentIsAutoSize, parent
     var mainAxisSize = props.mainAxisSize || "";
     var isAutoSize = mainAxisSize === "AUTO" || mainAxisSize === "min";
 
-    // flexGrow > 0 → FIXED (Flutter가 계산한 rect 크기 사용, 비율 정확)
-    // Figma layoutGrow는 비율을 지원하지 않으므로 FIXED로 실제 크기 반영
-    if (flexGrow > 0) {
-      // FIXED 유지 — rect 크기가 그대로 적용됨
+    // Expanded (flexGrow > 0 + tight):
+    // - 유일한 flex 자식 → FILL (Figma에서 반응형 동작)
+    // - 여러 flex 자식 → FIXED (비율 보존, Figma layoutGrow 미지원)
+    if (flexGrow > 0 && isTight && isSoleFlexChild) {
+      if (parentLayoutMode === "HORIZONTAL") {
+        node._sizingH = "FILL";
+      } else if (parentLayoutMode === "VERTICAL") {
+        node._sizingV = "FILL";
+      }
     }
 
     // 부모 cross=stretch → cross축 FILL
@@ -137,6 +142,43 @@ function propagateWrapFlags(node, props, children) {
   }
 }
 
+function propagateExpandedFill(node, props, children, parentProps) {
+  // 자식 중 주축 FILL이 있으면 부모도 같은 축에서 FILL로 승격
+  // 단, 같은 축 방향일 때만 전파 (Column→Column 체인은 OK, Row(H)→Column(V)은 안 됨)
+  // HUG 부모도 승격 대상 (mainAxisSize=AUTO 래퍼가 Expanded 전파를 막지 않도록)
+  if (node.type !== "Frame" || !props.layoutMode) return;
+  if (!parentProps) return;
+  if (props.fixedSize || props.isIconBox || props.isSvgBox) return;
+
+  var layoutDir = props.layoutMode;
+  var isVert = layoutDir === "VERTICAL" || layoutDir === "COLUMN";
+  var isHoriz = layoutDir === "HORIZONTAL" || layoutDir === "ROW";
+
+  var parentDir = parentProps.layoutMode || "";
+  var parentIsVert = parentDir === "VERTICAL" || parentDir === "COLUMN";
+  var parentIsHoriz = parentDir === "HORIZONTAL" || parentDir === "ROW";
+
+  if (isVert && parentIsVert) {
+    var hasVFill = false;
+    for (var i = 0; i < children.length; i++) {
+      if (children[i]._sizingV === "FILL") { hasVFill = true; break; }
+    }
+    if (hasVFill && node._sizingV !== "FILL") {
+      node._sizingV = "FILL";
+    }
+  }
+
+  if (isHoriz && parentIsHoriz) {
+    var hasHFill = false;
+    for (var i = 0; i < children.length; i++) {
+      if (children[i]._sizingH === "FILL") { hasHFill = true; break; }
+    }
+    if (hasHFill && node._sizingH !== "FILL") {
+      node._sizingH = "FILL";
+    }
+  }
+}
+
 function assignSizingHints(node, parentProps, parentNode) {
   if (!node || typeof node !== "object") return;
 
@@ -147,12 +189,23 @@ function assignSizingHints(node, parentProps, parentNode) {
   var parentMainAxisSize = parentProps ? (parentProps.mainAxisSize || "") : "";
   var parentIsAutoSize = parentMainAxisSize === "AUTO" || parentMainAxisSize === "min";
 
+  // 형제 중 flexGrow > 0인 자식 수 계산 (sole flex child 판별)
+  var siblingFlexCount = 0;
+  if (parentNode) {
+    var siblings = parentNode.children || [];
+    for (var si = 0; si < siblings.length; si++) {
+      var sp = (siblings[si].properties || {});
+      if ((sp.flexGrow || 0) > 0) siblingFlexCount++;
+    }
+  }
+  var isSoleFlexChild = siblingFlexCount === 1;
+
   if (node.type === "Image") {
     assignImageSizing(node);
   } else if (node.type === "Text") {
     assignTextSizing(node, parentLayoutMode, crossIsStretch, parentIsAutoSize, parentNode, parentProps);
   } else if (node.type === "Frame") {
-    assignFrameSizing(node, props, crossIsStretch, parentIsAutoSize, parentLayoutMode);
+    assignFrameSizing(node, props, crossIsStretch, parentIsAutoSize, parentLayoutMode, isSoleFlexChild);
   }
 
   applySizedBoxOverrides(node, props);
@@ -164,4 +217,5 @@ function assignSizingHints(node, parentProps, parentNode) {
   }
 
   propagateWrapFlags(node, props, children);
+  propagateExpandedFill(node, props, children, parentProps);
 }
