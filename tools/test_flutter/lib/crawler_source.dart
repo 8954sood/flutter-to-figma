@@ -2643,8 +2643,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         }
       }
 
-      // contentPadding 계산 (첫 번째 콘텐츠 자식 좌표 기반)
-      Map<String, dynamic>? paddingMap;
+      // contentPadding: 전체 자식 bounding box 기반
+      double bbMinX = double.infinity, bbMinY = double.infinity;
+      double bbMaxX = 0, bbMaxY = 0;
       for (final ic in inputChildren) {
         final icRect = ic['rect'] as Map<String, dynamic>?;
         if (icRect != null) {
@@ -2652,18 +2653,38 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
           final icY = (icRect['y'] as num?)?.toDouble() ?? 0;
           final icW = (icRect['w'] as num?)?.toDouble() ?? 0;
           final icH = (icRect['h'] as num?)?.toDouble() ?? 0;
-          final padLeft = icX - decoX;
-          final padTop = icY - decoY;
-          final padRight = decoW - padLeft - icW;
-          final padBottom = decoH - padTop - icH;
-          if (padLeft >= 0 && padTop >= 0) {
-            paddingMap = {
-              'top': padTop > 0 ? padTop : 0.0,
-              'right': padRight > 0 ? padRight : 0.0,
-              'bottom': padBottom > 0 ? padBottom : 0.0,
-              'left': padLeft > 0 ? padLeft : 0.0,
-            };
-            break;
+          if (icX < bbMinX) bbMinX = icX;
+          if (icY < bbMinY) bbMinY = icY;
+          if (icX + icW > bbMaxX) bbMaxX = icX + icW;
+          if (icY + icH > bbMaxY) bbMaxY = icY + icH;
+        }
+      }
+      Map<String, dynamic>? paddingMap;
+      if (bbMinX != double.infinity) {
+        final padLeft = bbMinX - decoX;
+        final padTop = bbMinY - decoY;
+        final padRight = decoW - (bbMaxX - decoX);
+        final padBottom = decoH - (bbMaxY - decoY);
+        paddingMap = {
+          'top': padTop > 0 ? padTop : 0.0,
+          'right': padRight > 0 ? padRight : 0.0,
+          'bottom': padBottom > 0 ? padBottom : 0.0,
+          'left': padLeft > 0 ? padLeft : 0.0,
+        };
+      }
+
+      // 자식 좌표 기반 ROW/COLUMN 방향 추론
+      String tfLayoutMode = 'COLUMN';
+      if (inputChildren.length >= 2) {
+        final first = inputChildren.first['rect'] as Map<String, dynamic>?;
+        final last = inputChildren.last['rect'] as Map<String, dynamic>?;
+        if (first != null && last != null) {
+          final xRange = ((last['x'] as num?)?.toDouble() ?? 0) -
+              ((first['x'] as num?)?.toDouble() ?? 0);
+          final yRange = ((last['y'] as num?)?.toDouble() ?? 0) -
+              ((first['y'] as num?)?.toDouble() ?? 0);
+          if (xRange.abs() > yRange.abs()) {
+            tfLayoutMode = 'ROW';
           }
         }
       }
@@ -2671,10 +2692,10 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
       // decoBox에 visual + inputChildren 적용
       decoBox['visual'] = Map<String, dynamic>.from(visual);
       decoBox['children'] = inputChildren;
-      decoBox['layoutMode'] = 'COLUMN';
+      decoBox['layoutMode'] = tfLayoutMode;
       decoBox['containerLayout'] = <String, dynamic>{
-        'mainAxisAlignment': 'center',
-        'crossAxisAlignment': 'start',
+        'mainAxisAlignment': tfLayoutMode == 'ROW' ? 'start' : 'center',
+        'crossAxisAlignment': tfLayoutMode == 'ROW' ? 'center' : 'start',
         'mainAxisSize': 'min',
       };
       if (paddingMap != null) {

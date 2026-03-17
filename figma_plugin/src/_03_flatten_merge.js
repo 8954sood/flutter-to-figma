@@ -154,6 +154,26 @@ function mergeChainIntoInnermost(chain) {
 
   for (var i = 0; i < chain.length - 1; i++) {
     var outerProps = chain[i].properties || {};
+    // If outer is a transparent wrapper (no visual):
+    // 1. Don't propagate HUG sizing (let assignSizingHints decide from parent context)
+    // 2. If outer has crossAxisAlignment=stretch, set cross-axis to FILL on merged node
+    var outerHasVisual = outerProps.backgroundColor || outerProps.hasBorder ||
+        outerProps.borderRadius || outerProps.elevation || outerProps.gradient;
+    if (!outerHasVisual) {
+      var outerCross = String(outerProps.crossAxisAlignment || "");
+      var outerLayout = outerProps.layoutMode;
+      if (outerCross.indexOf("stretch") !== -1) {
+        // stretch → cross-axis FILL
+        if (outerLayout === "VERTICAL" || outerLayout === "COLUMN") {
+          outerProps.sizingH = "FILL";
+        } else if (outerLayout === "HORIZONTAL" || outerLayout === "ROW") {
+          outerProps.sizingV = "FILL";
+        }
+      } else {
+        if (outerProps.sizingH === "HUG") delete outerProps.sizingH;
+        if (outerProps.sizingV === "HUG") delete outerProps.sizingV;
+      }
+    }
     mergePropsInto(mergedProps, outerProps, i === 0);
   }
 
@@ -200,7 +220,21 @@ function mergeWrapperChains(node) {
     var outerFlexGrow = ((chain[0].properties || {}).flexGrow || 0) > 0;
     var stopResult = shouldStopChain(current, next, outerFlexGrow);
 
-    if (stopResult === true) break;
+    if (stopResult === true) {
+      // Propagate FILL sizing from padding wrapper to visual child
+      // FILL overrides HUG (wrapper's stretch intent should reach the visual child)
+      var cp2 = current.properties || {};
+      var np2 = next.properties || {};
+      if (cp2.sizingH === "FILL") {
+        np2.sizingH = "FILL";
+        next.properties = np2;
+      }
+      if (cp2.sizingV === "FILL") {
+        np2.sizingV = "FILL";
+        next.properties = np2;
+      }
+      break;
+    }
 
     if (stopResult === "absorb") {
       current = next;

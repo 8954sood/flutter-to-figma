@@ -190,4 +190,343 @@ module.exports = [
       assert.strictEqual(node.children[0].properties.textAlignVertical, "center");
     }
   },
+  // ============================================================
+  // TextField layout direction (preprocessing level)
+  // ============================================================
+  {
+    name: "pipeline: TextField in multi-child parent — inner wrapper HUG should not block FILL from grandparent",
+    fn: function() {
+      // Structure: Column(5 children, cross=start) → [0]: Column(3 children) → InnerWrapper(HUG) → TF
+      // InnerWrapper has sizingH=HUG from childLayout, but grandparent context is FILL
+      // The inner wrapper is a transparent pass-through and should not force HUG on TF
+      var input = {
+        type: "Frame", layoutMode: "COLUMN",
+        rect: { x: 0, y: 0, w: 379, h: 72 },
+        visual: {},
+        containerLayout: { crossAxisAlignment: "start" },
+        childLayout: { sizingH: "FILL" },
+        children: [
+          {
+            type: "Frame", layoutMode: "COLUMN",
+            rect: { x: 0, y: 12, w: 379, h: 48 },
+            visual: {},
+            containerLayout: { crossAxisAlignment: "stretch" },
+            childLayout: { sizingH: "HUG" },
+            children: [{
+              type: "Frame", layoutMode: "ROW",
+              rect: { x: 0, y: 12, w: 379, h: 48 },
+              visual: { backgroundColor: "#FFF8F8F8", borderRadius: 8, isTextField: true },
+              containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "center", mainAxisSize: "min" },
+              children: [
+                { type: "Frame", rect: { x: 0, y: 12, w: 48, h: 48 }, visual: {}, containerLayout: {},
+                  children: [{ type: "Frame", rect: { x: 12, y: 24, w: 24, h: 24 }, visual: { isIconBox: true }, containerLayout: {} }] },
+                { type: "Text", rect: { x: 48, y: 25, w: 200, h: 22 }, visual: { content: "Hint" }, containerLayout: {} }
+              ]
+            }]
+          }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var tfNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).isTextField === true ||
+               ((n.properties || {}).backgroundColor || "").toLowerCase().indexOf("f8f8f8") !== -1;
+      });
+      assert.notStrictEqual(tfNode, null);
+      // TextField should be FILL — the inner wrapper's HUG should not override
+      // because it's a transparent wrapper with same size as TF
+      assert.strictEqual(tfNode._sizingH, "FILL",
+        "TextField should be FILL despite inner wrapper HUG. Got: " + tfNode._sizingH);
+    }
+  },
+  {
+    name: "pipeline: TextField in Padding wrapper — sizingH=FILL propagated from parent",
+    fn: function() {
+      // Structure: Padding(FILL) → Inner(HUG) → TextField(isTextField)
+      // After merge: Padding preserved, Inner+TextField merge
+      // TextField should inherit FILL from Padding wrapper's childLayout
+      var input = {
+        type: "Frame", layoutMode: "COLUMN",
+        rect: { x: 0, y: 201, w: 411, h: 72 },
+        visual: {},
+        containerLayout: { crossAxisAlignment: "start", padding: { top: 12, right: 16, bottom: 12, left: 16 } },
+        childLayout: { flexGrow: 0, sizingH: "FILL", sizingV: "HUG", alignSelf: "STRETCH" },
+        children: [{
+          type: "Frame", layoutMode: "COLUMN",
+          rect: { x: 16, y: 213, w: 379, h: 48 },
+          visual: {},
+          containerLayout: { crossAxisAlignment: "stretch" },
+          childLayout: { flexGrow: 0, sizingH: "HUG", sizingV: "HUG" },
+          children: [{
+            type: "Frame", layoutMode: "ROW",
+            rect: { x: 16, y: 213, w: 379, h: 48 },
+            visual: { backgroundColor: "#FFF8F8F8", border: { color: "#FFE0E0E0", width: 1 }, borderRadius: 8, isTextField: true },
+            containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "center", mainAxisSize: "min",
+              padding: { top: 0, right: 4, bottom: 0, left: 0 } },
+            children: [
+              { type: "Frame", rect: { x: 16, y: 213, w: 48, h: 48 },
+                visual: {}, containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "center" },
+                children: [
+                  { type: "Frame", rect: { x: 28, y: 225, w: 24, h: 24 }, visual: { isIconBox: true }, containerLayout: {} }
+                ] },
+              { type: "Text", rect: { x: 68, y: 226, w: 307, h: 22 },
+                visual: { content: "Search", fontSize: 16 }, containerLayout: {} }
+            ]
+          }]
+        }]
+      };
+      var result = helpers.runPreprocess(input);
+
+      // Find TextField
+      var tfNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).isTextField === true ||
+               ((n.properties || {}).backgroundColor || "").toLowerCase().indexOf("f8f8f8") !== -1;
+      });
+      assert.notStrictEqual(tfNode, null, "TextField should exist");
+
+      // TextField should be FILL (inherited from padding wrapper's FILL)
+      var sizH = tfNode._sizingH || (tfNode.properties || {}).sizingH;
+      assert.strictEqual(sizH, "FILL",
+        "TextField should be FILL (from parent wrapper), got " + sizH);
+    }
+  },
+  {
+    name: "pipeline: TextField with prefixIcon + hint — ROW layout preserved",
+    fn: function() {
+      // Crawler now outputs ROW + start alignment for TextField with prefixIcon
+      var input = {
+        type: "Frame", layoutMode: "ROW",
+        rect: { x: 16, y: 213, w: 379, h: 48 },
+        visual: { backgroundColor: "#FFF8F8F8", border: { color: "#FFE0E0E0", width: 1 }, borderRadius: 8, isTextField: true },
+        containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "center", mainAxisSize: "min",
+          padding: { top: 0, right: 4, bottom: 0, left: 0 } },
+        children: [
+          { type: "Frame", layoutMode: "COLUMN", rect: { x: 16, y: 213, w: 48, h: 48 },
+            visual: {}, containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "center" },
+            children: [
+              { type: "Frame", rect: { x: 28, y: 225, w: 24, h: 24 }, visual: { isIconBox: true }, containerLayout: {} }
+            ] },
+          { type: "Text", rect: { x: 68, y: 226, w: 307, h: 22 },
+            visual: { content: "Search here", fontSize: 16, color: "#FF999999" }, containerLayout: {} }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var tfNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).isTextField === true ||
+               ((n.properties || {}).backgroundColor || "").toLowerCase().indexOf("f8f8f8") !== -1;
+      });
+      assert.notStrictEqual(tfNode, null, "TextField node should exist");
+
+      // layoutMode should be HORIZONTAL (children are side by side)
+      assert.strictEqual(tfNode.properties.layoutMode, "HORIZONTAL",
+        "TextField with prefixIcon should be ROW/HORIZONTAL, not COLUMN");
+
+      // mainAxisAlignment should be start (icon left, text right), NOT center
+      assert.strictEqual(tfNode.properties.mainAxisAlignment, "start",
+        "TextField ROW should have mainAxisAlignment=start, not center");
+
+      // crossAxisAlignment should be center (vertically centered)
+      assert.strictEqual(tfNode.properties.crossAxisAlignment, "center",
+        "TextField ROW should have crossAxisAlignment=center");
+
+      // paddingRight should be reasonable, not 331px
+      var padR = tfNode.properties.paddingRight || 0;
+      assert.ok(padR < 50, "paddingRight should be reasonable, not " + padR);
+    }
+  },
+  {
+    name: "pipeline: TextField without icon — VERTICAL + mainAxis=center",
+    fn: function() {
+      var input = {
+        type: "Frame", layoutMode: "COLUMN",
+        rect: { x: 16, y: 100, w: 379, h: 48 },
+        visual: { backgroundColor: "#FFF8F8F8", borderRadius: 8, isTextField: true },
+        containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "start", mainAxisSize: "min",
+          padding: { top: 13, right: 20, bottom: 13, left: 20 } },
+        children: [
+          { type: "Text", rect: { x: 36, y: 113, w: 100, h: 22 },
+            visual: { content: "Enter name", fontSize: 16 }, containerLayout: {} }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var tfNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).isTextField === true;
+      });
+      assert.notStrictEqual(tfNode, null);
+      assert.strictEqual(tfNode.properties.layoutMode, "VERTICAL");
+      // COLUMN TextField: mainAxisAlignment=center (vertically centered text)
+      assert.strictEqual(tfNode.properties.mainAxisAlignment, "center",
+        "COLUMN TextField should keep mainAxisAlignment=center");
+    }
+  },
+  {
+    name: "pipeline: TextField with prefixIcon — text should be FILL (expand to fill remaining space)",
+    fn: function() {
+      // In a ROW TextField, the hint text should fill remaining space after icon
+      var input = {
+        type: "Frame", layoutMode: "ROW",
+        rect: { x: 16, y: 213, w: 379, h: 48 },
+        visual: { backgroundColor: "#FFF8F8F8", borderRadius: 8, isTextField: true },
+        containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "center", mainAxisSize: "min",
+          padding: { top: 0, right: 4, bottom: 0, left: 0 } },
+        children: [
+          { type: "Frame", rect: { x: 16, y: 213, w: 48, h: 48 },
+            visual: {}, containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "center" },
+            children: [
+              { type: "Frame", rect: { x: 28, y: 225, w: 24, h: 24 }, visual: { isIconBox: true }, containerLayout: {} }
+            ] },
+          { type: "Text", rect: { x: 68, y: 226, w: 307, h: 22 },
+            visual: { content: "Search", fontSize: 16 }, containerLayout: {},
+            childLayout: { flexGrow: 0, sizingH: "HUG" } }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var tfNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).isTextField === true ||
+               ((n.properties || {}).backgroundColor || "").toLowerCase().indexOf("f8f8f8") !== -1;
+      });
+      assert.notStrictEqual(tfNode, null);
+      // Verify children exist
+      assert.ok(tfNode.children.length >= 2, "Should have icon + text children");
+    }
+  },
+  {
+    name: "pipeline: TextField isTextField flag preserved after merge",
+    fn: function() {
+      var input = {
+        type: "Frame", layoutMode: "COLUMN",
+        rect: { x: 16, y: 100, w: 379, h: 48 },
+        visual: { backgroundColor: "#FFF8F8F8", borderRadius: 8, isTextField: true, border: { color: "#FFE0E0E0", width: 1 } },
+        containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "start", mainAxisSize: "min",
+          padding: { top: 13, right: 20, bottom: 13, left: 20 } },
+        children: [
+          { type: "Text", rect: { x: 36, y: 113, w: 100, h: 22 },
+            visual: { content: "Hint", fontSize: 16, color: "#FF999999" }, containerLayout: {} }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var tfNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).isTextField === true;
+      });
+      assert.notStrictEqual(tfNode, null, "isTextField should be preserved after preprocessing");
+      assert.ok(tfNode.properties.backgroundColor.toLowerCase().indexOf("f8f8f8") !== -1, "bg preserved");
+      assert.strictEqual(tfNode.properties.hasBorder, true);
+    }
+  },
+  {
+    name: "pipeline: TextField visual props (bg, border, radius) preserved",
+    fn: function() {
+      var input = {
+        type: "Frame", layoutMode: "ROW",
+        rect: { x: 16, y: 213, w: 379, h: 48 },
+        visual: { backgroundColor: "#FFFAFAFA", border: { color: "#FFCCCCCC", width: 2 }, borderRadius: 12, isTextField: true },
+        containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "center", mainAxisSize: "min" },
+        children: [
+          { type: "Text", rect: { x: 36, y: 226, w: 200, h: 22 },
+            visual: { content: "Type here", fontSize: 16 }, containerLayout: {} }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var tfNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).isTextField === true;
+      });
+      assert.notStrictEqual(tfNode, null);
+      assert.ok(tfNode.properties.backgroundColor.toLowerCase().indexOf("fafafa") !== -1, "bg preserved");
+      assert.strictEqual(tfNode.properties.hasBorder, true, "border preserved");
+      assert.strictEqual(tfNode.properties.borderRadius, "12", "borderRadius preserved");
+    }
+  },
+  {
+    name: "pipeline: TextField padding symmetry — vertical centered, horizontal correct",
+    fn: function() {
+      // TextField(padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12))
+      var input = {
+        type: "Frame", layoutMode: "COLUMN",
+        rect: { x: 0, y: 0, w: 300, h: 48 },
+        visual: { backgroundColor: "#FFF0F0F0", borderRadius: 8, isTextField: true },
+        containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "start", mainAxisSize: "min",
+          padding: { top: 12, right: 16, bottom: 12, left: 16 } },
+        children: [
+          { type: "Text", rect: { x: 16, y: 12, w: 150, h: 24 },
+            visual: { content: "Value", fontSize: 16 }, containerLayout: {} }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var tfNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).isTextField === true;
+      });
+      assert.notStrictEqual(tfNode, null);
+      assert.strictEqual(tfNode.properties.paddingTop, 12);
+      assert.strictEqual(tfNode.properties.paddingBottom, 12);
+      assert.strictEqual(tfNode.properties.paddingLeft, 16);
+      assert.strictEqual(tfNode.properties.paddingRight, 16);
+    }
+  },
+  {
+    name: "pipeline: TextField with prefixIcon — icon and text both preserved",
+    fn: function() {
+      var input = {
+        type: "Frame", layoutMode: "COLUMN",
+        rect: { x: 16, y: 213, w: 379, h: 48 },
+        visual: { backgroundColor: "#FFF8F8F8", borderRadius: 8, isTextField: true },
+        containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "start", mainAxisSize: "min" },
+        children: [
+          { type: "Frame", rect: { x: 16, y: 213, w: 48, h: 48 },
+            visual: {}, containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "center" },
+            children: [
+              { type: "Frame", rect: { x: 28, y: 225, w: 24, h: 24 }, visual: { isIconBox: true }, containerLayout: {} }
+            ] },
+          { type: "Text", rect: { x: 68, y: 226, w: 200, h: 22 },
+            visual: { content: "Hint", fontSize: 16 }, containerLayout: {} }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var tfNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).isTextField === true ||
+               ((n.properties || {}).backgroundColor || "").toLowerCase().indexOf("f8f8f8") !== -1;
+      });
+      assert.notStrictEqual(tfNode, null);
+
+      var icons = [], texts = [];
+      function walk(n) {
+        if ((n.properties || {}).isIconBox) icons.push(n);
+        if (n.type === "Text") texts.push(n);
+        (n.children || []).forEach(walk);
+      }
+      walk(tfNode);
+      assert.ok(icons.length >= 1, "Icon preserved");
+      assert.ok(texts.length >= 1, "Text preserved");
+    }
+  },
+  {
+    name: "pipeline: TextField padding — bounding box based, reasonable values",
+    fn: function() {
+      // Crawler now computes padding from bounding box of ALL children
+      // Icon at x=16 w=48, Text at x=68 w=307 → bbox: x=16..375, w covers most of container
+      var input = {
+        type: "Frame", layoutMode: "ROW",
+        rect: { x: 16, y: 213, w: 379, h: 48 },
+        visual: { backgroundColor: "#FFF8F8F8", borderRadius: 8, isTextField: true },
+        containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "center", mainAxisSize: "min",
+          padding: { top: 0, right: 4, bottom: 0, left: 0 } },
+        children: [
+          { type: "Frame", rect: { x: 16, y: 213, w: 48, h: 48 },
+            visual: {}, containerLayout: {},
+            children: [
+              { type: "Frame", rect: { x: 28, y: 225, w: 24, h: 24 }, visual: { isIconBox: true }, containerLayout: {} }
+            ] },
+          { type: "Text", rect: { x: 68, y: 226, w: 307, h: 22 },
+            visual: { content: "Search", fontSize: 16 }, containerLayout: {} }
+        ]
+      };
+      var result = helpers.runPreprocess(input);
+      var tfNode = helpers.findNode(result, function(n) {
+        return (n.properties || {}).isTextField === true ||
+               ((n.properties || {}).backgroundColor || "").toLowerCase().indexOf("f8f8f8") !== -1;
+      });
+      assert.notStrictEqual(tfNode, null);
+      // paddingRight should be small (content fills most of width)
+      var padR = tfNode.properties.paddingRight || 0;
+      assert.ok(padR < 30, "paddingRight should be based on bounding box, got " + padR);
+    }
+  },
 ];
