@@ -69,7 +69,7 @@ function assignFrameSizing(node, props, crossIsStretch, parentIsAutoSize, parent
     // Expanded (flexGrow > 0 + tight):
     // - 유일한 flex 자식 → FILL (Figma에서 반응형 동작)
     // - 여러 flex 자식 → FIXED (비율 보존, Figma layoutGrow 미지원)
-    if (flexGrow > 0 && isTight && isSoleFlexChild) {
+    if (flexGrow > 0 && isTight && isSoleFlexChild && !parentIsAutoSize) {
       if (parentLayoutMode === "HORIZONTAL") {
         node._sizingH = "FILL";
       } else if (parentLayoutMode === "VERTICAL") {

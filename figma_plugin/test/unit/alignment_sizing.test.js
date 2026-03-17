@@ -1705,6 +1705,65 @@ module.exports = [
     }
   },
   {
+    name: "sizing: sole Expanded in AUTO/min parent → stays FIXED (dialog pattern)",
+    fn: function() {
+      // Dialog Column(mainAxisSize:min) > [Title, Expanded(content), Buttons]
+      // Expanded should NOT get FILL — parent is HUG, FILL would squeeze content
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 411, h: 914 },
+        properties: { layoutMode: "VERTICAL", mainAxisAlignment: "center" },
+        children: [
+          { type: "Frame", rect: { x: 40, y: 390, w: 331, h: 133 },
+            properties: { layoutMode: "VERTICAL", mainAxisSize: "AUTO" },
+            children: [
+              { type: "Frame", rect: { x: 40, y: 390, w: 331, h: 53 },
+                properties: {}, children: [] },
+              { type: "Frame", rect: { x: 40, y: 443, w: 331, h: 8 },
+                properties: { flexGrow: 1, flexFit: "FlexFit.tight", layoutMode: "VERTICAL" },
+                children: [
+                  { type: "Text", rect: { x: 64, y: 459, w: 283, h: 40 },
+                    properties: { content: "이 미팅을 삭제하시겠습니까?" } }
+                ] },
+              { type: "Frame", rect: { x: 40, y: 451, w: 331, h: 72 },
+                properties: { layoutMode: "HORIZONTAL" },
+                children: [] },
+            ]
+          },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      var dialog = tree.children[0];
+      var content = dialog.children[1];
+
+      assert.notStrictEqual(content._sizingV, "FILL",
+        "Expanded in AUTO/min parent should NOT get FILL — dialog content would be squeezed");
+    }
+  },
+  {
+    name: "sizing: sole Expanded in FIXED parent → gets FILL (normal Scaffold)",
+    fn: function() {
+      // Scaffold Column(mainAxisSize:max) > [Header, Expanded, Footer]
+      // Expanded SHOULD get FILL — parent is fixed size
+      var tree = {
+        type: "Frame", rect: { x: 0, y: 0, w: 411, h: 800 },
+        properties: { layoutMode: "VERTICAL", mainAxisSize: "FIXED" },
+        children: [
+          { type: "Frame", rect: { x: 0, y: 0, w: 411, h: 80 },
+            properties: {}, children: [] },
+          { type: "Frame", rect: { x: 0, y: 80, w: 411, h: 640 },
+            properties: { flexGrow: 1, flexFit: "FlexFit.tight", layoutMode: "VERTICAL" },
+            children: [] },
+          { type: "Frame", rect: { x: 0, y: 720, w: 411, h: 80 },
+            properties: {}, children: [] },
+        ]
+      };
+      P.assignSizingHints(tree, null, null);
+      var expanded = tree.children[1];
+      assert.strictEqual(expanded._sizingV, "FILL",
+        "Expanded in FIXED parent should get FILL");
+    }
+  },
+  {
     name: "pipeline: Expanded + fixed footer — Expanded gets FILL",
     fn: function() {
       // Full pipeline: Column > [Expanded(ScrollContent), Column(footer)]

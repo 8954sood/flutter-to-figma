@@ -326,4 +326,193 @@ module.exports = [
       }
     }
   },
+  // ============================================================
+  // mergeChainIntoInnermost: stretch → FILL vs center alignment
+  // ============================================================
+  {
+    name: "mergeChainIntoInnermost: stretch wrappers + center innermost → sizingH NOT FILL",
+    fn: function() {
+      // Dialog pattern: stretch(L2) → stretch(L3) → stretch(L4) → center(L5) → visual dialog(L6)
+      // L5 stops the chain. Chain=[L2,L3,L4,L5]. L5 has crossAxisAlignment=center.
+      // L2/L3/L4 have crossAxisAlignment=stretch → set sizingH=FILL.
+      // But final merged crossAxisAlignment should be center, so sizingH should NOT be FILL.
+      var chain = [
+        { rect: { x: 0, y: 0, w: 411, h: 914 },
+          properties: { layoutMode: "VERTICAL", crossAxisAlignment: "stretch", mainAxisSize: "AUTO" } },
+        { rect: { x: 0, y: 0, w: 411, h: 914 },
+          properties: { layoutMode: "VERTICAL", crossAxisAlignment: "stretch", paddingTop: 24, paddingBottom: 24 } },
+        { rect: { x: 0, y: 24, w: 411, h: 866 },
+          properties: { layoutMode: "VERTICAL", crossAxisAlignment: "stretch", paddingLeft: 40, paddingRight: 40, paddingTop: 24, paddingBottom: 24 } },
+        { rect: { x: 40, y: 48, w: 331, h: 818 },
+          properties: { layoutMode: "VERTICAL", crossAxisAlignment: "center", mainAxisAlignment: "center", mainAxisSize: "FIXED" },
+          children: [{ type: "Frame", rect: { x: 65, y: 354, w: 280, h: 205 }, properties: { backgroundColor: "#ffffffff" } }] },
+      ];
+      var result = P.mergeChainIntoInnermost(chain);
+      var rp = result.properties;
+
+      // crossAxisAlignment should be center (from innermost L5, or outermost if it had center)
+      assert.strictEqual(rp.crossAxisAlignment, "center",
+        "merged crossAxisAlignment should be center");
+      // sizingH should NOT be FILL — center alignment means child has its own width
+      assert.notStrictEqual(rp.sizingH, "FILL",
+        "sizingH should NOT be FILL when final crossAxisAlignment is center");
+    }
+  },
+  {
+    name: "mergeChainIntoInnermost: stretch wrappers + stretch innermost → sizingH FILL preserved",
+    fn: function() {
+      // Normal case: all stretch → sizingH=FILL should be preserved
+      var chain = [
+        { rect: { x: 0, y: 0, w: 411, h: 800 },
+          properties: { layoutMode: "VERTICAL", crossAxisAlignment: "stretch" } },
+        { rect: { x: 0, y: 0, w: 411, h: 800 },
+          properties: { layoutMode: "VERTICAL", crossAxisAlignment: "stretch" },
+          children: [{ type: "Text", properties: {} }] },
+      ];
+      var result = P.mergeChainIntoInnermost(chain);
+      assert.strictEqual(result.properties.sizingH, "FILL",
+        "stretch + stretch → sizingH should be FILL");
+    }
+  },
+  {
+    name: "mergePropsInto: outermost stretch does NOT override inner center for crossAxisAlignment",
+    fn: function() {
+      var target = { crossAxisAlignment: "center", layoutMode: "VERTICAL" };
+      var source = { crossAxisAlignment: "stretch", sizingH: "FILL" };
+      P.mergePropsInto(target, source, true);
+      // stretch is not center/end, so it should not override center
+      assert.strictEqual(target.crossAxisAlignment, "center",
+        "outermost stretch should NOT override inner center");
+    }
+  },
+  {
+    name: "pipeline: dialog centering — dialog keeps 280px width, not stretched to 331px",
+    fn: function() {
+      // Full pipeline: overlay → padding wrappers (stretch) → center container → dialog (280px)
+      var input = {
+        type: "Frame", layoutMode: "COLUMN",
+        rect: { x: 0, y: 0, w: 411, h: 914 },
+        visual: { backgroundColor: "#ffffffff" },
+        containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "stretch", mainAxisSize: "max" },
+        children: [{
+          type: "Frame", layoutMode: "NONE",
+          rect: { x: 0, y: 0, w: 411, h: 914 },
+          visual: {}, containerLayout: {},
+          children: [
+            // transparent frame
+            { type: "Frame", layoutMode: "NONE",
+              rect: { x: 0, y: 0, w: 411, h: 914 },
+              visual: { backgroundColor: "#00000000" }, containerLayout: {}, children: [] },
+            // ModalBarrier (route)
+            { type: "Frame", layoutMode: "NONE",
+              rect: { x: 0, y: 0, w: 411, h: 914 },
+              visual: {}, containerLayout: {}, children: [], widgetName: "ModalBarrier" },
+            // Main page (Scaffold)
+            { type: "Frame", layoutMode: "COLUMN",
+              rect: { x: 0, y: 0, w: 411, h: 914 },
+              visual: { backgroundColor: "#ffffffff" }, containerLayout: {},
+              children: [{ type: "Text", rect: { x: 16, y: 100, w: 200, h: 20 },
+                visual: { content: "Page" }, containerLayout: {} }],
+              widgetName: "Scaffold" },
+            // ModalBarrier (dialog)
+            { type: "Frame", layoutMode: "NONE",
+              rect: { x: 0, y: 0, w: 411, h: 914 },
+              visual: { backgroundColor: "#8a000000" }, containerLayout: {}, children: [],
+              widgetName: "ModalBarrier" },
+            // Dialog overlay
+            { type: "Frame", layoutMode: "COLUMN",
+              rect: { x: 0, y: 0, w: 411, h: 914 },
+              visual: { opacity: 1.0 },
+              containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "stretch", mainAxisSize: "min" },
+              children: [{
+                // SafeArea padding wrapper
+                type: "Frame", layoutMode: "COLUMN",
+                rect: { x: 0, y: 0, w: 411, h: 914 },
+                visual: {},
+                containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "stretch", mainAxisSize: "min", padding: { top: 24, right: 0, bottom: 24, left: 0 } },
+                children: [{
+                  // Dialog inset padding
+                  type: "Frame", layoutMode: "COLUMN",
+                  rect: { x: 0, y: 24, w: 411, h: 866 },
+                  visual: {},
+                  containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "stretch", mainAxisSize: "min", padding: { top: 24, right: 40, bottom: 24, left: 40 } },
+                  children: [{
+                    // Center container
+                    type: "Frame", layoutMode: "COLUMN",
+                    rect: { x: 40, y: 48, w: 331, h: 818 },
+                    visual: {},
+                    containerLayout: { mainAxisAlignment: "center", crossAxisAlignment: "center", mainAxisSize: "max" },
+                    children: [{
+                      // The actual dialog
+                      type: "Frame", layoutMode: "COLUMN",
+                      rect: { x: 65.71, y: 354.64, w: 280, h: 205 },
+                      visual: { backgroundColor: "#ffffffff", shadow: { elevation: 6.0 }, borderRadius: 28.0 },
+                      containerLayout: { mainAxisAlignment: "start", crossAxisAlignment: "stretch", mainAxisSize: "min" },
+                      children: [
+                        { type: "Frame", layoutMode: "COLUMN",
+                          rect: { x: 65.71, y: 354.64, w: 280, h: 53 },
+                          visual: {}, containerLayout: { padding: { top: 24, right: 24, bottom: 0, left: 24 } },
+                          children: [
+                            { type: "Text", rect: { x: 89.71, y: 378.64, w: 89, h: 29 },
+                              visual: { content: "미팅 삭제", fontSize: 24, fontWeight: "FontWeight.w600" }, containerLayout: {} }
+                          ] },
+                        { type: "Frame", layoutMode: "COLUMN",
+                          rect: { x: 65.71, y: 407.64, w: 280, h: 80 },
+                          visual: {}, containerLayout: { padding: { top: 16, right: 24, bottom: 24, left: 24 } },
+                          childLayout: { flexGrow: 1, sizingH: "FILL", sizingV: "FILL" },
+                          children: [
+                            { type: "Text", rect: { x: 89.71, y: 423.64, w: 232, h: 40 },
+                              visual: { content: "이 미팅을 삭제하시겠습니까?" }, containerLayout: {} }
+                          ] },
+                        { type: "Frame", layoutMode: "ROW",
+                          rect: { x: 65.71, y: 487.64, w: 280, h: 72 },
+                          visual: {},
+                          containerLayout: { mainAxisAlignment: "end", crossAxisAlignment: "center", padding: { top: 0, right: 24, bottom: 24, left: 24 } },
+                          children: [
+                            { type: "Frame", rect: { x: 144.71, y: 487.64, w: 64, h: 44 },
+                              visual: { borderRadius: 12.0 }, containerLayout: {},
+                              children: [{ type: "Text", rect: { x: 160.71, y: 499.64, w: 25, h: 20 },
+                                visual: { content: "취소" }, containerLayout: {} }] },
+                            { type: "Frame", rect: { x: 220.71, y: 487.64, w: 64, h: 44 },
+                              visual: { borderRadius: 12.0 }, containerLayout: {},
+                              children: [{ type: "Text", rect: { x: 236.71, y: 499.64, w: 25, h: 20 },
+                                visual: { content: "삭제", color: "#ffD32F2F" }, containerLayout: {} }] },
+                          ] },
+                      ]
+                    }]
+                  }]
+                }]
+              }]
+            }
+          ]
+        }]
+      };
+
+      var result = helpers.runPreprocess(input);
+
+      // Find the dialog node (has borderRadius 28 and backgroundColor)
+      var dialogNode = helpers.findNode(result, function(n) {
+        var p = n.properties || {};
+        return p.borderRadius === "28" && p.backgroundColor === "#ffffffff" &&
+          p.elevation === 6;
+      });
+
+      if (!dialogNode) {
+        // Try finding by shadow
+        dialogNode = helpers.findNode(result, function(n) {
+          var p = n.properties || {};
+          return p.borderRadius === "28" || (p.borderRadius && String(p.borderRadius) === "28");
+        });
+      }
+
+      assert.notStrictEqual(dialogNode, null, "dialog node should exist");
+
+      if (dialogNode) {
+        var dr = dialogNode.rect || {};
+        // Dialog width should be 280, NOT 331
+        assert.ok(dr.w <= 290,
+          "dialog width should be ~280 (not stretched to 331). Got: " + dr.w);
+      }
+    }
+  },
 ];

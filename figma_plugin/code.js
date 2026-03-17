@@ -519,6 +519,19 @@ function mergeChainIntoInnermost(chain) {
     mergePropsInto(mergedProps, outerProps, i === 0);
   }
 
+  // 최종 crossAxisAlignment가 center/end이면 stretch에서 온 FILL 제거
+  // (center 정렬 컨테이너의 자식은 자기 크기를 유지해야 함, FILL이면 늘어남)
+  var finalCross = String(mergedProps.crossAxisAlignment || "");
+  var finalLayout = mergedProps.layoutMode;
+  if (finalCross === "center" || finalCross === "end") {
+    if ((finalLayout === "VERTICAL" || finalLayout === "COLUMN") && mergedProps.sizingH === "FILL") {
+      delete mergedProps.sizingH;
+    }
+    if ((finalLayout === "HORIZONTAL" || finalLayout === "ROW") && mergedProps.sizingV === "FILL") {
+      delete mergedProps.sizingV;
+    }
+  }
+
   merged.properties = mergedProps;
 
   // Icon/SVG: keep inner rect (icon has specific size, wrapper is just centering container)
@@ -1904,7 +1917,7 @@ function assignFrameSizing(node, props, crossIsStretch, parentIsAutoSize, parent
     // Expanded (flexGrow > 0 + tight):
     // - 유일한 flex 자식 → FILL (Figma에서 반응형 동작)
     // - 여러 flex 자식 → FIXED (비율 보존, Figma layoutGrow 미지원)
-    if (flexGrow > 0 && isTight && isSoleFlexChild) {
+    if (flexGrow > 0 && isTight && isSoleFlexChild && !parentIsAutoSize) {
       if (parentLayoutMode === "HORIZONTAL") {
         node._sizingH = "FILL";
       } else if (parentLayoutMode === "VERTICAL") {
