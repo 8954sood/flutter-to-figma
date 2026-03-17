@@ -1625,4 +1625,238 @@ void main() {
       matchSnapshot('decorated_container', result);
     });
   });
+
+  // ============================================================
+  // Visibility
+  // ============================================================
+
+  group('Visibility', () {
+    testWidgets('visible: true → child rendered normally', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: const [
+              Visibility(
+                visible: true,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Text('Shown'),
+              ),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+      final textNode = findNode(result, (n) {
+        if (n['type'] != 'Text') return false;
+        final vis = n['visual'] as Map<String, dynamic>? ?? {};
+        final content = vis['content'] as String? ?? '';
+        return content.contains('Shown');
+      });
+      expect(textNode, isNotNull, reason: 'visible=true should render child');
+
+      // opacity should not be 0
+      final vis = textNode!['visual'] as Map<String, dynamic>? ?? {};
+      final opacity = vis['opacity'];
+      expect(opacity != 0.0, isTrue,
+          reason: 'visible=true should not have opacity 0');
+    });
+
+    testWidgets('visible: false + maintainSize: true → child with opacity 0',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: const [
+              Visibility(
+                visible: false,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Text('Hidden'),
+              ),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+      // Should find a node with opacity 0 that contains the hidden text
+      final hiddenNode = findNode(result, (n) {
+        final vis = n['visual'] as Map<String, dynamic>?;
+        return vis != null && vis['opacity'] == 0.0;
+      });
+      expect(hiddenNode, isNotNull,
+          reason:
+              'visible=false + maintainSize=true should produce opacity=0 node');
+
+      // Node should have non-zero size (layout space preserved)
+      final rect = hiddenNode!['rect'] as Map<String, dynamic>? ?? {};
+      final w = (rect['w'] as num?)?.toDouble() ?? 0;
+      final h = (rect['h'] as num?)?.toDouble() ?? 0;
+      expect(w, greaterThan(0), reason: 'Width should be preserved');
+      expect(h, greaterThan(0), reason: 'Height should be preserved');
+    });
+
+    testWidgets(
+        'visible: false + maintainSize: false (Offstage) → excluded entirely',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: const [
+              Text('Before'),
+              Visibility(
+                visible: false,
+                // maintainSize defaults to false
+                child: Text('Offstaged'),
+              ),
+              Text('After'),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+      // 'Offstaged' text should not appear anywhere in the tree
+      final offstagedNode = findNode(result, (n) {
+        if (n['type'] != 'Text') return false;
+        final vis = n['visual'] as Map<String, dynamic>? ?? {};
+        final content = vis['content'] as String? ?? '';
+        return content.contains('Offstaged');
+      });
+      expect(offstagedNode, isNull,
+          reason: 'visible=false + maintainSize=false should be excluded');
+
+      // 'Before' and 'After' should still exist
+      final beforeNode = findNode(result, (n) {
+        if (n['type'] != 'Text') return false;
+        final vis = n['visual'] as Map<String, dynamic>? ?? {};
+        return (vis['content'] as String? ?? '').contains('Before');
+      });
+      final afterNode = findNode(result, (n) {
+        if (n['type'] != 'Text') return false;
+        final vis = n['visual'] as Map<String, dynamic>? ?? {};
+        return (vis['content'] as String? ?? '').contains('After');
+      });
+      expect(beforeNode, isNotNull);
+      expect(afterNode, isNotNull);
+    });
+
+    testWidgets(
+        'visible: false + maintainSize: true preserves layout space in Column',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              const Text('Top'),
+              Visibility(
+                visible: false,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Container(
+                  width: 200,
+                  height: 80,
+                  color: const Color(0xFFFF0000),
+                ),
+              ),
+              const Text('Bottom'),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+
+      // The hidden container should exist with opacity 0 and correct size
+      final hiddenNode = findNode(result, (n) {
+        final vis = n['visual'] as Map<String, dynamic>?;
+        if (vis == null || vis['opacity'] != 0.0) return false;
+        final rect = n['rect'] as Map<String, dynamic>? ?? {};
+        final w = (rect['w'] as num?)?.toDouble() ?? 0;
+        final h = (rect['h'] as num?)?.toDouble() ?? 0;
+        return w >= 200 && h >= 80;
+      });
+      expect(hiddenNode, isNotNull,
+          reason: 'Hidden container should exist with opacity=0 and 200x80');
+
+      // 'Bottom' text should be offset by the hidden container's height
+      final topNode = findNode(result, (n) {
+        if (n['type'] != 'Text') return false;
+        final vis = n['visual'] as Map<String, dynamic>? ?? {};
+        return (vis['content'] as String? ?? '').contains('Top');
+      });
+      final bottomNode = findNode(result, (n) {
+        if (n['type'] != 'Text') return false;
+        final vis = n['visual'] as Map<String, dynamic>? ?? {};
+        return (vis['content'] as String? ?? '').contains('Bottom');
+      });
+      expect(topNode, isNotNull);
+      expect(bottomNode, isNotNull);
+
+      final topY = (topNode!['rect'] as Map)['y'] as num;
+      final bottomY = (bottomNode!['rect'] as Map)['y'] as num;
+      expect(bottomY - topY, greaterThanOrEqualTo(80),
+          reason: 'Hidden node should push Bottom text down by at least 80px');
+    });
+
+    testWidgets('multiple Visibility in same parent', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: const [
+              Visibility(
+                visible: true,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Text('V1 Shown'),
+              ),
+              Visibility(
+                visible: false,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Text('V2 Hidden'),
+              ),
+              Visibility(
+                visible: true,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Text('V3 Shown'),
+              ),
+            ],
+          ),
+        ),
+      ));
+
+      final result = runCrawler();
+
+      // V1 and V3 should be visible (no opacity 0)
+      for (final label in ['V1 Shown', 'V3 Shown']) {
+        final node = findNode(result, (n) {
+          if (n['type'] != 'Text') return false;
+          final vis = n['visual'] as Map<String, dynamic>? ?? {};
+          return (vis['content'] as String? ?? '').contains(label);
+        });
+        expect(node, isNotNull, reason: '$label should exist');
+        final vis = node!['visual'] as Map<String, dynamic>? ?? {};
+        expect(vis['opacity'] != 0.0, isTrue,
+            reason: '$label should not have opacity 0');
+      }
+
+      // V2 should have opacity 0
+      final hiddenNodes = findAllNodes(result, (n) {
+        final vis = n['visual'] as Map<String, dynamic>?;
+        return vis != null && vis['opacity'] == 0.0;
+      });
+      expect(hiddenNodes, isNotEmpty,
+          reason: 'V2 Hidden should produce opacity=0 node');
+    });
+  });
 }

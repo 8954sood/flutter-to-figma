@@ -2015,6 +2015,46 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     }
   }
   // ---------------------------------------------------
+  // [8.4] _RenderVisibility (Visibility + maintainSize: true)
+  // maintainSize: false 인 경우 Offstage로 처리되어 이 분기에 오지 않음
+  // ---------------------------------------------------
+  else if (runtimeTypeStr == '_RenderVisibility') {
+    bool visible = true;
+    try {
+      visible = (node as dynamic).visible as bool;
+    } catch (_) {}
+
+    // visible 여부와 관계없이 자식 통과
+    RenderBox? singleChild;
+    int childCount = 0;
+    node.visitChildren((child) {
+      childCount++;
+      if (child is RenderBox) singleChild = child;
+    });
+    if (childCount == 1 && singleChild != null) {
+      final childResult = _crawl(singleChild);
+      if (childResult != null) {
+        if (!visible) {
+          // visible: false + maintainSize: true → opacity 0
+          final childVisual =
+              childResult['visual'] as Map<String, dynamic>? ?? {};
+          childVisual['opacity'] = 0.0;
+          childResult['visual'] = childVisual;
+        }
+        childResult['rect'] = {
+          'x': offset.dx,
+          'y': offset.dy,
+          'w': node.size.width,
+          'h': node.size.height,
+        };
+        return childResult;
+      }
+    }
+    type = 'Frame';
+    layoutMode = 'NONE';
+    if (!visible) visual['opacity'] = 0.0;
+  }
+  // ---------------------------------------------------
   // [8.5] RenderClipRRect
   // ---------------------------------------------------
   else if (node is RenderClipRRect) {
