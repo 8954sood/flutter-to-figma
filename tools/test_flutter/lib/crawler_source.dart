@@ -141,11 +141,10 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
         );
       }
 
-      double colorDist(Color a, Color b) =>
-          ((a.red - b.red).abs() +
-                  (a.green - b.green).abs() +
-                  (a.blue - b.blue).abs())
-              .toDouble();
+      double colorDist(Color a, Color b) => ((a.red - b.red).abs() +
+              (a.green - b.green).abs() +
+              (a.blue - b.blue).abs())
+          .toDouble();
 
       // 방향 판별
       const n = 6;
@@ -933,8 +932,7 @@ bool _hasContentRecursive(Map<String, dynamic> node) {
       vis['backgroundColor'] != null ||
       vis['gradient'] != null ||
       vis['border'] != null ||
-      vis['imagePath'] != null)
-    return true;
+      vis['imagePath'] != null) return true;
   final children = node['children'] as List?;
   if (children == null) return false;
   for (final c in children) {
@@ -1725,14 +1723,10 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
     layoutMode = 'WRAP';
     containerLayout['itemSpacing'] = node.spacing;
     containerLayout['runSpacing'] = node.runSpacing;
-    containerLayout['mainAxisAlignment'] = node.alignment
-        .toString()
-        .split('.')
-        .last;
-    containerLayout['crossAxisAlignment'] = node.crossAxisAlignment
-        .toString()
-        .split('.')
-        .last;
+    containerLayout['mainAxisAlignment'] =
+        node.alignment.toString().split('.').last;
+    containerLayout['crossAxisAlignment'] =
+        node.crossAxisAlignment.toString().split('.').last;
     // Wrap은 constraints.maxWidth로 줄바꿈 → Figma에서도 이 너비가 필요
     // node.size.width는 자식 바운딩 박스만 반영하므로 constraints.maxWidth 사용
     final maxW = node.constraints.maxWidth;
@@ -2473,13 +2467,13 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
                     childLayout['sizingH'] = 'FILL';
                     childLayout['sizingV'] =
                         (isStretch && childLayout['sizingV'] == 'FILL')
-                        ? 'FILL'
-                        : 'HUG';
+                            ? 'FILL'
+                            : 'HUG';
                   } else {
                     childLayout['sizingH'] =
                         (isStretch && childLayout['sizingH'] == 'FILL')
-                        ? 'FILL'
-                        : 'HUG';
+                            ? 'FILL'
+                            : 'HUG';
                     childLayout['sizingV'] = 'FILL';
                   }
                 } else if (flex > 0) {
@@ -2495,13 +2489,13 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
                     childLayout['sizingH'] = 'HUG';
                     childLayout['sizingV'] =
                         (isStretch && childLayout['sizingV'] == 'FILL')
-                        ? 'FILL'
-                        : 'HUG';
+                            ? 'FILL'
+                            : 'HUG';
                   } else {
                     childLayout['sizingH'] =
                         (isStretch && childLayout['sizingH'] == 'FILL')
-                        ? 'FILL'
-                        : 'HUG';
+                            ? 'FILL'
+                            : 'HUG';
                     childLayout['sizingV'] = 'HUG';
                   }
                 }
@@ -2528,9 +2522,8 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
               try {
                 final childOffset = child.localToGlobal(Offset.zero);
                 final pos = isHorizontal ? childOffset.dx : childOffset.dy;
-                final size = isHorizontal
-                    ? child.size.width
-                    : child.size.height;
+                final size =
+                    isHorizontal ? child.size.width : child.size.height;
                 _childMainAxisPositions.add(pos);
                 if (_lastChildEnd != null) {
                   final gap = pos - _lastChildEnd!;
@@ -2726,11 +2719,9 @@ Map<String, dynamic>? _crawl(RenderObject? node) {
         final first = inputChildren.first['rect'] as Map<String, dynamic>?;
         final last = inputChildren.last['rect'] as Map<String, dynamic>?;
         if (first != null && last != null) {
-          final xRange =
-              ((last['x'] as num?)?.toDouble() ?? 0) -
+          final xRange = ((last['x'] as num?)?.toDouble() ?? 0) -
               ((first['x'] as num?)?.toDouble() ?? 0);
-          final yRange =
-              ((last['y'] as num?)?.toDouble() ?? 0) -
+          final yRange = ((last['y'] as num?)?.toDouble() ?? 0) -
               ((first['y'] as num?)?.toDouble() ?? 0);
           if (xRange.abs() > yRange.abs()) {
             tfLayoutMode = 'ROW';
@@ -3261,15 +3252,13 @@ void figmaStartExportWithImages([double pixelRatio = 3.0]) {
   _capturePixelRatio = pixelRatio;
   _asyncExportBusy = true;
   _asyncExportResult = null;
-  _figmaExportWithImagesAsync()
-      .then((r) {
-        _asyncExportResult = r;
-        _asyncExportBusy = false;
-      })
-      .catchError((e) {
-        _asyncExportResult = '{"error":"$e"}';
-        _asyncExportBusy = false;
-      });
+  _figmaExportWithImagesAsync().then((r) {
+    _asyncExportResult = r;
+    _asyncExportBusy = false;
+  }).catchError((e) {
+    _asyncExportResult = '{"error":"$e"}';
+    _asyncExportBusy = false;
+  });
 }
 
 /// CLI에서 폴링: evaluate('figmaGetExportResult()')

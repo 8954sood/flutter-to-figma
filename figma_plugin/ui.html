@@ -132,9 +132,17 @@
         margin-bottom: 6px;
         cursor: pointer;
         position: relative;
+        transition: opacity 0.15s;
       }
       .gallery-card:hover {
         border-color: #2f80ff;
+      }
+      .gallery-card.dragging {
+        opacity: 0.3;
+      }
+      .gallery-card.drag-over {
+        border-top: 2px solid #2f80ff;
+        margin-top: -2px;
       }
       .gallery-card-name {
         font-size: 11px;
@@ -432,7 +440,7 @@
           html +=
             '<div class="gallery-card" data-id="' +
             item.id +
-            '">' +
+            '" draggable="true">' +
             '<div class="gallery-card-name" data-id="' +
             item.id +
             '">' +
@@ -503,6 +511,77 @@
           );
         }
       };
+
+      // --- Drag & Drop reorder ---
+      var dragSrcId = null;
+
+      galleryList.addEventListener("dragstart", function (e) {
+        var card = e.target.closest(".gallery-card");
+        if (!card) return;
+        dragSrcId = card.getAttribute("data-id");
+        card.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", dragSrcId);
+      });
+
+      galleryList.addEventListener("dragend", function (e) {
+        var card = e.target.closest(".gallery-card");
+        if (card) card.classList.remove("dragging");
+        dragSrcId = null;
+        // Remove all drag-over indicators
+        var overs = galleryList.querySelectorAll(".drag-over");
+        for (var i = 0; i < overs.length; i++) overs[i].classList.remove("drag-over");
+      });
+
+      galleryList.addEventListener("dragover", function (e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        var card = e.target.closest(".gallery-card");
+        if (!card || card.getAttribute("data-id") === dragSrcId) return;
+        // Clear previous indicators
+        var overs = galleryList.querySelectorAll(".drag-over");
+        for (var i = 0; i < overs.length; i++) overs[i].classList.remove("drag-over");
+        card.classList.add("drag-over");
+
+        // Auto-scroll when dragging near edges
+        var listRect = galleryList.getBoundingClientRect();
+        var edgeZone = 40;
+        var scrollSpeed = 6;
+        if (e.clientY - listRect.top < edgeZone) {
+          galleryList.scrollTop -= scrollSpeed;
+        } else if (listRect.bottom - e.clientY < edgeZone) {
+          galleryList.scrollTop += scrollSpeed;
+        }
+      });
+
+      galleryList.addEventListener("dragleave", function (e) {
+        var card = e.target.closest(".gallery-card");
+        if (card) card.classList.remove("drag-over");
+      });
+
+      galleryList.addEventListener("drop", function (e) {
+        e.preventDefault();
+        var targetCard = e.target.closest(".gallery-card");
+        if (!targetCard || !dragSrcId) return;
+        var targetId = targetCard.getAttribute("data-id");
+        if (targetId === dragSrcId) return;
+
+        // Clear visuals
+        var overs = galleryList.querySelectorAll(".drag-over");
+        for (var i = 0; i < overs.length; i++) overs[i].classList.remove("drag-over");
+
+        parent.postMessage(
+          {
+            pluginMessage: {
+              type: "reorder-json",
+              fromId: dragSrcId,
+              toId: targetId,
+            },
+          },
+          "*"
+        );
+        dragSrcId = null;
+      });
 
       renderAllBtn.onclick = function () {
         parent.postMessage(

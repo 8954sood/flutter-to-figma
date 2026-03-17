@@ -3237,6 +3237,24 @@ figma.ui.onmessage = function (msg) {
     return;
   }
 
+  if (msg.type === "reorder-json") {
+    (async function () {
+      var list = await loadJsonList();
+      var fromIdx = -1;
+      var toIdx = -1;
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].id === msg.fromId) fromIdx = i;
+        if (list[i].id === msg.toId) toIdx = i;
+      }
+      if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+      var item = list.splice(fromIdx, 1)[0];
+      list.splice(toIdx, 0, item);
+      await saveJsonList(list);
+      await sendJsonListToUI();
+    })();
+    return;
+  }
+
   if (msg.type === "load-json-item") {
     (async function () {
       var list = await loadJsonList();
@@ -3335,7 +3353,16 @@ figma.ui.onmessage = function (msg) {
       var offsetX = 0;
       var gap = 100;
       var rendered = 0;
-      for (var i = 0; i < list.length; i++) {
+      var total = list.length;
+
+      function yieldToUI() {
+        return new Promise(function (resolve) {
+          setTimeout(resolve, 0);
+        });
+      }
+
+      for (var i = 0; i < total; i++) {
+        await yieldToUI();
         try {
           var root = JSON.parse(list[i].jsonStr);
           var frame = await renderWholeLayout(root);
