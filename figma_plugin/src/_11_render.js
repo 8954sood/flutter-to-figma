@@ -66,6 +66,8 @@ async function renderWholeLayout(root) {
 
   figma.currentPage.selection = [screenFrame];
   figma.viewport.scrollAndZoomIntoView([screenFrame]);
+
+  return screenFrame;
 }
 
 function countNodes(node) {

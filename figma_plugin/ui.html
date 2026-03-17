@@ -15,6 +15,9 @@
         background: #111;
         color: #f5f5f5;
         padding: 12px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
       }
       .app-title {
         font-size: 14px;
@@ -27,6 +30,7 @@
         border-radius: 8px;
         overflow: hidden;
         border: 1px solid #333;
+        flex-shrink: 0;
       }
       .tab {
         flex: 1;
@@ -49,7 +53,6 @@
       }
       textarea {
         width: 100%;
-        height: 260px;
         font-size: 10px;
         padding: 8px;
         border-radius: 6px;
@@ -61,6 +64,9 @@
       }
       textarea:focus {
         border-color: #2f80ff;
+      }
+      #jsonInput {
+        height: 260px;
       }
       .btn-primary {
         width: 100%;
@@ -88,11 +94,136 @@
         font-size: 11px;
         cursor: pointer;
       }
+      .btn-secondary:hover {
+        background: #222;
+      }
       .hint {
         margin-top: 6px;
         font-size: 10px;
         color: #888;
         line-height: 1.4;
+      }
+      .tab-content {
+        display: none;
+        flex: 1;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .tab-content.active {
+        display: flex;
+      }
+      /* Gallery styles */
+      .gallery-list {
+        flex: 1;
+        overflow-y: auto;
+        margin-bottom: 8px;
+      }
+      .gallery-empty {
+        text-align: center;
+        color: #666;
+        font-size: 11px;
+        padding: 40px 0;
+      }
+      .gallery-card {
+        background: #181818;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+        cursor: pointer;
+        position: relative;
+      }
+      .gallery-card:hover {
+        border-color: #2f80ff;
+      }
+      .gallery-card-name {
+        font-size: 11px;
+        font-weight: 600;
+        color: #f5f5f5;
+        margin-bottom: 2px;
+        padding-right: 50px;
+      }
+      .gallery-card-date {
+        font-size: 9px;
+        color: #888;
+        margin-bottom: 4px;
+      }
+      .gallery-card-preview {
+        font-size: 9px;
+        color: #555;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .gallery-card-actions {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        display: flex;
+        gap: 2px;
+      }
+      .gallery-card-action {
+        background: none;
+        border: none;
+        color: #666;
+        font-size: 10px;
+        cursor: pointer;
+        padding: 2px 5px;
+        line-height: 1;
+        border-radius: 3px;
+      }
+      .gallery-card-action:hover {
+        color: #f5f5f5;
+        background: #333;
+      }
+      .gallery-card-action.delete:hover {
+        color: #ff4444;
+        background: #2a1a1a;
+      }
+      .gallery-actions {
+        flex-shrink: 0;
+      }
+      /* Add form styles */
+      .add-form {
+        display: none;
+        flex-direction: column;
+        flex: 1;
+        overflow: hidden;
+      }
+      .add-form.active {
+        display: flex;
+      }
+      .add-form-input {
+        width: 100%;
+        font-size: 11px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid #333;
+        background: #181818;
+        color: #f5f5f5;
+        outline: none;
+        margin-bottom: 8px;
+      }
+      .add-form-input:focus {
+        border-color: #2f80ff;
+      }
+      .add-form-textarea {
+        flex: 1;
+        min-height: 120px;
+      }
+      .add-form-error {
+        font-size: 10px;
+        color: #ff4444;
+        margin-top: 4px;
+        display: none;
+      }
+      .add-form-buttons {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .add-form-buttons button {
+        flex: 1;
       }
     </style>
   </head>
@@ -101,10 +232,11 @@
 
     <div class="tab-bar">
       <div class="tab active" id="tab-flutter">Flutter JSON</div>
-      <div class="tab" id="tab-code">코드 실행(추후)</div>
+      <div class="tab" id="tab-gallery">JSON 갤러리</div>
     </div>
 
-    <div>
+    <!-- Flutter JSON Tab -->
+    <div class="tab-content active" id="content-flutter">
       <div class="label">Flutter 레이아웃 JSON 붙여넣기:</div>
       <textarea
         id="jsonInput"
@@ -127,13 +259,125 @@
       </div>
     </div>
 
-    <script>
-      const jsonInput = document.getElementById("jsonInput");
-      const renderBtn = document.getElementById("renderBtn");
-      const closeBtn = document.getElementById("closeBtn");
+    <!-- JSON Gallery Tab -->
+    <div class="tab-content" id="content-gallery">
+      <!-- List view -->
+      <div id="galleryListView" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+        <div class="gallery-list" id="galleryList">
+          <div class="gallery-empty">저장된 JSON이 없습니다.</div>
+        </div>
+        <div class="gallery-actions">
+          <button class="btn-primary" id="renderAllBtn">
+            모든 뷰 렌더링
+          </button>
+          <button class="btn-secondary" id="addJsonBtn">+ JSON 추가</button>
+        </div>
+      </div>
 
+      <!-- Add form view -->
+      <div class="add-form" id="addFormView">
+        <div class="label">화면 이름:</div>
+        <input
+          type="text"
+          class="add-form-input"
+          id="addFormName"
+          placeholder="예: Profile Page"
+        />
+        <div class="label">JSON:</div>
+        <textarea
+          class="add-form-textarea"
+          id="addFormJson"
+          spellcheck="false"
+          placeholder='{ "type": "Frame", ... }'
+        ></textarea>
+        <div class="add-form-error" id="addFormError"></div>
+        <div class="add-form-buttons">
+          <button class="btn-secondary" id="addFormCancel">취소</button>
+          <button class="btn-primary" id="addFormSave" style="margin-top:0">저장</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var jsonInput = document.getElementById("jsonInput");
+      var renderBtn = document.getElementById("renderBtn");
+      var closeBtn = document.getElementById("closeBtn");
+      var tabFlutter = document.getElementById("tab-flutter");
+      var tabGallery = document.getElementById("tab-gallery");
+      var contentFlutter = document.getElementById("content-flutter");
+      var contentGallery = document.getElementById("content-gallery");
+      var galleryList = document.getElementById("galleryList");
+      var renderAllBtn = document.getElementById("renderAllBtn");
+      var addJsonBtn = document.getElementById("addJsonBtn");
+      var galleryListView = document.getElementById("galleryListView");
+      var addFormView = document.getElementById("addFormView");
+      var addFormName = document.getElementById("addFormName");
+      var addFormJson = document.getElementById("addFormJson");
+      var addFormError = document.getElementById("addFormError");
+      var addFormCancel = document.getElementById("addFormCancel");
+      var addFormSave = document.getElementById("addFormSave");
+
+      var galleryItems = [];
+      var editingId = null;
+
+      // --- Tab switching ---
+      function switchTab(tab) {
+        if (tab === "flutter") {
+          tabFlutter.classList.add("active");
+          tabGallery.classList.remove("active");
+          contentFlutter.classList.add("active");
+          contentGallery.classList.remove("active");
+        } else {
+          tabGallery.classList.add("active");
+          tabFlutter.classList.remove("active");
+          contentGallery.classList.add("active");
+          contentFlutter.classList.remove("active");
+          showGalleryList();
+          parent.postMessage(
+            { pluginMessage: { type: "load-json-list" } },
+            "*"
+          );
+        }
+      }
+
+      tabFlutter.onclick = function () {
+        switchTab("flutter");
+      };
+      tabGallery.onclick = function () {
+        switchTab("gallery");
+      };
+
+      // --- Gallery: list vs add form ---
+      function showGalleryList() {
+        galleryListView.style.display = "flex";
+        addFormView.classList.remove("active");
+      }
+
+      function showAddForm() {
+        editingId = null;
+        galleryListView.style.display = "none";
+        addFormView.classList.add("active");
+        addFormName.value = "";
+        addFormJson.value = "";
+        addFormError.style.display = "none";
+        addFormSave.textContent = "저장";
+        addFormName.focus();
+      }
+
+      function showEditForm(id, name, json) {
+        editingId = id;
+        galleryListView.style.display = "none";
+        addFormView.classList.add("active");
+        addFormName.value = name;
+        addFormJson.value = json;
+        addFormError.style.display = "none";
+        addFormSave.textContent = "수정";
+        addFormName.focus();
+      }
+
+      // --- Flutter JSON tab ---
       renderBtn.onclick = function () {
-        const text = jsonInput.value.trim();
+        var text = jsonInput.value.trim();
         if (!text) {
           alert("JSON을 먼저 입력해 주세요.");
           return;
@@ -151,19 +395,195 @@
 
       closeBtn.onclick = function () {
         parent.postMessage(
-          {
-            pluginMessage: {
-              type: "close",
-            },
-          },
+          { pluginMessage: { type: "close" } },
           "*"
         );
       };
 
-      document.getElementById("tab-code").onclick = function () {
-        alert("코드 실행 탭은 추후 확장 예정입니다 :)");
+      // --- Gallery tab ---
+      function formatDate(isoStr) {
+        var d = new Date(isoStr);
+        var pad = function (n) {
+          return n < 10 ? "0" + n : "" + n;
+        };
+        return (
+          d.getFullYear() +
+          "-" +
+          pad(d.getMonth() + 1) +
+          "-" +
+          pad(d.getDate()) +
+          " " +
+          pad(d.getHours()) +
+          ":" +
+          pad(d.getMinutes())
+        );
+      }
+
+      function renderGallery(items) {
+        galleryItems = items;
+        if (!items || items.length === 0) {
+          galleryList.innerHTML =
+            '<div class="gallery-empty">저장된 JSON이 없습니다.</div>';
+          return;
+        }
+        var html = "";
+        for (var i = 0; i < items.length; i++) {
+          var item = items[i];
+          html +=
+            '<div class="gallery-card" data-id="' +
+            item.id +
+            '">' +
+            '<div class="gallery-card-name" data-id="' +
+            item.id +
+            '">' +
+            escapeHtml(item.name) +
+            "</div>" +
+            '<div class="gallery-card-date">' +
+            formatDate(item.savedAt) +
+            "</div>" +
+            '<div class="gallery-card-preview">' +
+            escapeHtml(item.preview) +
+            "</div>" +
+            '<div class="gallery-card-actions">' +
+            '<button class="gallery-card-action edit" data-id="' +
+            item.id +
+            '" title="수정">edit</button>' +
+            '<button class="gallery-card-action delete" data-id="' +
+            item.id +
+            '" title="삭제">&times;</button>' +
+            "</div>" +
+            "</div>";
+        }
+        galleryList.innerHTML = html;
+      }
+
+      function escapeHtml(str) {
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      galleryList.onclick = function (e) {
+        // Delete button
+        var deleteBtn = e.target.closest(".gallery-card-action.delete");
+        if (deleteBtn) {
+          e.stopPropagation();
+          var id = deleteBtn.getAttribute("data-id");
+          parent.postMessage(
+            { pluginMessage: { type: "delete-json", id: id } },
+            "*"
+          );
+          return;
+        }
+        // Edit button
+        var editBtn = e.target.closest(".gallery-card-action.edit");
+        if (editBtn) {
+          e.stopPropagation();
+          var editId = editBtn.getAttribute("data-id");
+          parent.postMessage(
+            { pluginMessage: { type: "load-json-item", id: editId } },
+            "*"
+          );
+          return;
+        }
+        // Card click → render
+        var card = e.target.closest(".gallery-card");
+        if (card) {
+          var cardId = card.getAttribute("data-id");
+          parent.postMessage(
+            {
+              pluginMessage: {
+                type: "render-gallery-item",
+                id: cardId,
+              },
+            },
+            "*"
+          );
+        }
       };
-      document.getElementById("tab-flutter").onclick = function () {};
+
+      renderAllBtn.onclick = function () {
+        parent.postMessage(
+          { pluginMessage: { type: "render-all-layouts" } },
+          "*"
+        );
+      };
+
+      addJsonBtn.onclick = function () {
+        showAddForm();
+      };
+
+      // --- Add form ---
+      addFormCancel.onclick = function () {
+        showGalleryList();
+      };
+
+      addFormSave.onclick = function () {
+        var name = addFormName.value.trim();
+        var json = addFormJson.value.trim();
+
+        if (!name) {
+          addFormError.textContent = "화면 이름을 입력해 주세요.";
+          addFormError.style.display = "block";
+          addFormName.focus();
+          return;
+        }
+        if (!json) {
+          addFormError.textContent = "JSON을 입력해 주세요.";
+          addFormError.style.display = "block";
+          addFormJson.focus();
+          return;
+        }
+        try {
+          JSON.parse(json);
+        } catch (e) {
+          addFormError.textContent = "JSON 형식이 올바르지 않습니다: " + e.message;
+          addFormError.style.display = "block";
+          addFormJson.focus();
+          return;
+        }
+
+        addFormError.style.display = "none";
+        if (editingId) {
+          parent.postMessage(
+            {
+              pluginMessage: {
+                type: "update-json",
+                id: editingId,
+                name: name,
+                json: json,
+              },
+            },
+            "*"
+          );
+        } else {
+          parent.postMessage(
+            {
+              pluginMessage: {
+                type: "save-json",
+                name: name,
+                json: json,
+              },
+            },
+            "*"
+          );
+        }
+        showGalleryList();
+      };
+
+      // --- Receive messages from plugin ---
+      window.onmessage = function (event) {
+        var msg = event.data.pluginMessage;
+        if (!msg) return;
+        if (msg.type === "json-list") {
+          renderGallery(msg.items);
+        }
+        if (msg.type === "json-item") {
+          showEditForm(msg.id, msg.name, msg.json);
+        }
+      };
     </script>
   </body>
 </html>
