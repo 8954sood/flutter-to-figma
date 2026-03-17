@@ -1,10 +1,10 @@
 # Flutter to Figma
 
+![version](https://img.shields.io/badge/version-0.2.0-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![platform](https://img.shields.io/badge/platform-Figma%20Plugin-blueviolet)
+
 [한국어](./README.ko.md)
 
 Convert running Flutter screens into editable Figma layouts. The tool crawls the Flutter widget tree at runtime, extracts layout and style information as JSON, and reconstructs it in Figma via a plugin.
-
-> **Note:** Image widgets are not yet supported.
 
 ## How It Works
 
@@ -103,15 +103,19 @@ Register the extractor as an External Tool for one-click extraction:
 
 | Category   | Properties                                            |
 |------------|-------------------------------------------------------|
-| Layout     | Auto Layout (Row / Column / Wrap), Width, Height      |
+| Layout     | Auto Layout (Row / Column / Wrap / Stack), Expanded / Flexible (FILL sizing), SizedBox, FittedBox, Width, Height |
 | Spacing    | Padding, Margin, itemSpacing (mainAxis, crossAxis)    |
-| Background | Solid color, Linear gradient, Radial gradient         |
-| Border     | Color, Width, Per-corner radius                       |
-| Effects    | Elevation / Shadow, Blur filter                       |
+| Background | Solid color, Linear / Radial / Sweep gradient         |
+| Border     | Color, Width (uniform + per-side), Per-corner radius  |
+| Effects    | Elevation / Shadow, Background blur (BackdropFilter), Opacity |
 | Transform  | Rotation                                              |
-| Clip       | Rectangle, Rounded rectangle, Wave                    |
-| Text       | Font size, Weight, Color, Alignment, Letter spacing   |
+| Clip       | Rectangle, Rounded rectangle, ClipPath (vector mask)  |
+| Text       | Font size, Weight, Color, Alignment, Letter spacing, Line height, RichText (textSpans), Truncation (ellipsis), maxLines |
+| Image      | Base64 image fill, BoxFit (contain / cover / fill), Icon image (base64 PNG) |
 | Grid       | GridView with mainAxisSpacing and crossAxisSpacing     |
+| Widgets    | AppBar (NavigationToolbar), BottomNavigationBar, ListTile, Chip, TextField, Divider |
+| Overlay    | Dialog, BottomSheet (STACK with scrim), ModalBarrier detection |
+| Visibility | `Visibility(maintainSize: true)` — preserves layout space with opacity 0 |
 
 ## Known Limitations
 
@@ -122,16 +126,20 @@ Some Flutter widgets cannot be perfectly reproduced in Figma due to API constrai
 ```
 flutter-to-figma/
 ├── tools/
-│   ├── crawler_source.dart                 # Widget tree crawler (source of truth)
-│   ├── export_figma_layout.dart            # Extractor template
+│   ├── crawler/                            # Dart crawler source modules (edit these)
+│   ├── test_flutter/                       # Flutter crawler integration tests
 │   ├── merge.dart                          # Build script
-│   └── generated_export_figma_layout.dart  # Generated output (do not edit)
+│   ├── export_figma_layout.dart            # Extractor template
+│   ├── crawler_source.dart                 # Generated (do not edit)
+│   └── generated_export_figma_layout.dart  # Generated (do not edit)
 ├── figma_plugin/
+│   ├── src/                                # JS plugin source modules (edit these)
+│   ├── test/                               # Plugin preprocessing unit + integration tests
 │   ├── manifest.json                       # Figma plugin manifest
-│   ├── code.js                             # Plugin logic
-│   └── ui.html                             # Plugin UI
-├── README.md                               # English documentation
-├── README.ko.md                            # Korean documentation
+│   ├── code.js                             # Generated (do not edit)
+│   └── ui.html                             # Plugin UI (JSON input + gallery)
+├── README.md
+├── README.ko.md
 ├── CHANGELOG.md
 ├── LICENSE
 └── CONTRIBUTING.md

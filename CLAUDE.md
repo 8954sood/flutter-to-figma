@@ -55,7 +55,7 @@ Unit + integration snapshot tests for the preprocessing pipeline.
 node figma_plugin/test/run.js
 ```
 
-- **Run after modifying `figma_plugin/src/_03~_07`** to catch regressions.
+- **Run after modifying `figma_plugin/src/_03~_08`** to catch regressions.
 - Update snapshots: `node figma_plugin/test/run.js --update`
 - Filter: `node figma_plugin/test/run.js --filter <pattern>`
 

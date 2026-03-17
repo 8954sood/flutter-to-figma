@@ -30,7 +30,7 @@ Files are sorted by name and concatenated. Each file is a code fragment (not an 
 | `_01_precapture.dart` | `_preCaptureImages` — async capture of images, icons, CustomPaint, Checkbox, etc. |
 | `_02_element_collector.dart` | `_collectDesignInfoFromElements` — Element tree traversal, collects per-widget design info |
 | `_03_visual_helpers.dart` | `_parseBorderRadius`, `_extractBorderRadius`, `_extractGradient`, `_hasContentRecursive`, `_hasVisualProps` |
-| `_04_crawl.dart` | `_crawl` main recursive fn + `_extractSliverPadding`, `_crawlThroughSliver`, `_applyFittedBoxScale` |
+| `_04_crawl.dart` | `_crawl` main recursive fn + `_extractSliverPadding`, `_crawlThroughSliver`, `_applyFittedBoxScale`. Handles `_RenderVisibility` (`Visibility` widget with `maintainSize: true`) — `visible: false` → opacity 0 with children preserved |
 | `_05_screen_cleanup.dart` | `_keepLastScaffold`, `_containsScaffold` — removes duplicate screens from Navigator stack |
 | `_06_entry.dart` | `figmaExtractorEntryPoint`, `_collectScrollPositions` — public entry point |
 | `_07_async_export.dart` | `_figmaExportWithImagesAsync`, `figmaStartExportWithImages`, `figmaGetExportResult` — async export API |
@@ -39,7 +39,7 @@ Files are sorted by name and concatenated. Each file is a code fragment (not an 
 
 1. **Element tree traversal** (`_02`): Maps widget-level info (decoration, color, border, widget names) to RenderObjects
 2. **Async pre-capture** (`_01`): Captures images, icons, CustomPaint, ShaderMask, etc. as base64 PNG
-3. **Render tree crawl** (`_04`): Converts RenderObject → Schema v2 JSON nodes recursively, with Smart Flattening and Visual Merge
+3. **Render tree crawl** (`_04`): Converts RenderObject → Schema v2 JSON nodes recursively, with Smart Flattening and Visual Merge. Handles special RenderObjects: `RenderOpacity`, `RenderAnimatedOpacity`, `_RenderVisibility` (Visibility widget), `RenderOffstage`, `RenderClipRRect`, etc.
 4. **Post-processing** (`_05`): Removes overlapping Scaffolds
 
 ## Test
