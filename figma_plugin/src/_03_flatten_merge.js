@@ -75,25 +75,46 @@ function shouldStopChain(current, next, outerFlexGrow) {
        cp.crossAxisAlignment !== np.crossAxisAlignment)) return true;
 
   if (nextHasVisual) {
-    if (curHasVisual) return true;
+    if (curHasVisual) return true; // both visual → stop
 
-    // outer가 padding 래퍼이고 inner(visual child)와 크기가 다르면 병합 중단
-    // Padding(16) + Container(bg,border,radius) 패턴: outer는 위치 결정, inner는 시각 요소
-    var curHasPadding = cp.paddingTop || cp.paddingRight || cp.paddingBottom || cp.paddingLeft;
-    if (curHasPadding && !curHasVisual) {
-      var curRect = current.rect || {};
-      var nextRect = next.rect || {};
-      var wDiff = (curRect.w || 0) - (nextRect.w || 0);
-      var hDiff = (curRect.h || 0) - (nextRect.h || 0);
-      if (wDiff > 4 || hDiff > 4) return true;
-    }
+    var curRect = current.rect || {};
+    var nextRect = next.rect || {};
+    var wDiff = (curRect.w || 0) - (nextRect.w || 0);
+    var hDiff = (curRect.h || 0) - (nextRect.h || 0);
+    var hasSizeDiff = wDiff > 4 || hDiff > 4;
+
+    // 크기가 유의미하게 다르면 병합 중단
+    // (outer가 centering/padding container로 visual child를 감싸는 패턴)
+    if (hasSizeDiff) return true;
 
     return "absorb";
+  }
+
+  // current가 visual이고 next가 non-visual이지만 크기가 다르면 → stop
+  // (visual container + transparent spacer/wrapper + visual child 패턴 방지)
+  if (curHasVisual && !nextHasVisual) {
+    var curRect2 = current.rect || {};
+    var nextRect2 = next.rect || {};
+    if ((curRect2.w || 0) - (nextRect2.w || 0) > 4 || (curRect2.h || 0) - (nextRect2.h || 0) > 4) {
+      return true;
+    }
   }
 
   if (curHasVisual && !outerFlexGrow && cp.mainAxisSize === "FIXED" &&
       (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
        cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) return true;
+
+  // Non-visual centering container → non-visual child with size difference:
+  // Stop to preserve center/end alignment (Center + icon wrapper pattern)
+  if (!curHasVisual && !nextHasVisual &&
+      (cp.mainAxisAlignment === "center" || cp.mainAxisAlignment === "end" ||
+       cp.crossAxisAlignment === "center" || cp.crossAxisAlignment === "end")) {
+    var curRect3 = current.rect || {};
+    var nextRect3 = next.rect || {};
+    if ((curRect3.w || 0) - (nextRect3.w || 0) > 4 || (curRect3.h || 0) - (nextRect3.h || 0) > 4) {
+      return true;
+    }
+  }
 
   return false;
 }
@@ -178,7 +199,13 @@ function mergeChainIntoInnermost(chain) {
   }
 
   merged.properties = mergedProps;
-  merged.rect = chain[0].rect || merged.rect;
+
+  // Icon/SVG: keep inner rect (icon has specific size, wrapper is just centering container)
+  if (mergedProps.isIconBox || mergedProps.isSvgBox) {
+    // Keep merged.rect (inner node's rect) — don't inflate to outer wrapper size
+  } else {
+    merged.rect = chain[0].rect || merged.rect;
+  }
 
   if (chain[0].widgetName && !merged.widgetName) {
     merged.widgetName = chain[0].widgetName;
@@ -221,10 +248,9 @@ function mergeWrapperChains(node) {
     var stopResult = shouldStopChain(current, next, outerFlexGrow);
 
     if (stopResult === true) {
-      // Propagate FILL sizing from padding wrapper to visual child
-      // FILL overrides HUG (wrapper's stretch intent should reach the visual child)
       var cp2 = current.properties || {};
       var np2 = next.properties || {};
+      // Propagate FILL sizing from padding wrapper to visual child
       if (cp2.sizingH === "FILL") {
         np2.sizingH = "FILL";
         next.properties = np2;
@@ -232,6 +258,19 @@ function mergeWrapperChains(node) {
       if (cp2.sizingV === "FILL") {
         np2.sizingV = "FILL";
         next.properties = np2;
+      }
+      // Propagate center/end alignment from outer to child (Center/Align widget pattern)
+      if (cp2.mainAxisAlignment === "center" || cp2.mainAxisAlignment === "end") {
+        if (!np2.mainAxisAlignment || np2.mainAxisAlignment === "start") {
+          np2.mainAxisAlignment = cp2.mainAxisAlignment;
+          next.properties = np2;
+        }
+      }
+      if (cp2.crossAxisAlignment === "center" || cp2.crossAxisAlignment === "end") {
+        if (!np2.crossAxisAlignment || np2.crossAxisAlignment === "start") {
+          np2.crossAxisAlignment = cp2.crossAxisAlignment;
+          next.properties = np2;
+        }
       }
       break;
     }
@@ -283,9 +322,20 @@ function mergePropsInto(target, source, isOutermost) {
       continue;
     }
 
-    if (key === "layoutMode" || key === "mainAxisAlignment" || key === "crossAxisAlignment" ||
-        key === "mainAxisSize" || key === "itemSpacing") {
+    if (key === "layoutMode" || key === "mainAxisSize" || key === "itemSpacing") {
       if (!(key in target)) target[key] = val;
+      continue;
+    }
+
+    // Alignment: outermost center/end overrides inner start/stretch (Center/Align widget pattern)
+    // "start" and "stretch" are Flutter defaults — outer center/end is intentional
+    if (key === "mainAxisAlignment" || key === "crossAxisAlignment") {
+      if (isOutermost && (val === "center" || val === "end") &&
+          (!target[key] || target[key] === "start" || target[key] === "stretch")) {
+        target[key] = val;
+      } else if (!(key in target)) {
+        target[key] = val;
+      }
       continue;
     }
 
