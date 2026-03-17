@@ -101,6 +101,60 @@ function loadPipeline() {
   return new Function(combined)();
 }
 
+// Load render-phase functions with a figma API stub.
+function loadRenderPipeline(options) {
+  options = options || {};
+  var figmaStub = options.figma || {};
+
+  if (!figmaStub.createImage) {
+    figmaStub.createImage = function() {
+      return { hash: "mock-image-hash" };
+    };
+  }
+  if (!figmaStub.loadFontAsync) {
+    figmaStub.loadFontAsync = async function() {};
+  }
+
+  var srcDir = path.join(__dirname, "..", "src");
+  var files = [
+    "_00_utils.js",
+    "_09_helpers.js",
+    "_10_fonts.js",
+    "_12_visual_props.js",
+    "_13_autolayout.js",
+    "_14_text_image.js",
+  ];
+
+  var combined = "";
+  combined += "var loadedFonts = {};\n";
+  combined += "var resolvedFonts = {};\n";
+  combined += "var figma = __figma;\n";
+
+  for (var i = 0; i < files.length; i++) {
+    var filePath = path.join(srcDir, files[i]);
+    combined += fs.readFileSync(filePath, "utf8") + "\n";
+  }
+
+  combined += "return {\n";
+  combined += "  preloadFonts: preloadFonts,\n";
+  combined += "  applyVisualProps: applyVisualProps,\n";
+  combined += "  applyBgColor: applyBgColor,\n";
+  combined += "  applyGradient: applyGradient,\n";
+  combined += "  buildLinearGradientTransform: buildLinearGradientTransform,\n";
+  combined += "  buildRadialGradientTransform: buildRadialGradientTransform,\n";
+  combined += "  buildSweepGradientTransform: buildSweepGradientTransform,\n";
+  combined += "  applyAutoLayout: applyAutoLayout,\n";
+  combined += "  applySizing: applySizing,\n";
+  combined += "  applyTextProps: applyTextProps,\n";
+  combined += "  applyImageProps: applyImageProps,\n";
+  combined += "  resolveFont: resolveFont,\n";
+  combined += "  loadedFonts: loadedFonts,\n";
+  combined += "  resolvedFonts: resolvedFonts,\n";
+  combined += "};\n";
+
+  return new Function("__figma", combined)(figmaStub);
+}
+
 // Run the full preprocessing pipeline on input JSON
 function runPreprocess(input) {
   var P = loadPipeline();
@@ -172,6 +226,7 @@ function findNode(tree, predicate) {
 
 module.exports = {
   loadPipeline: loadPipeline,
+  loadRenderPipeline: loadRenderPipeline,
   runPreprocess: runPreprocess,
   deepEqual: deepEqual,
   findNode: findNode,

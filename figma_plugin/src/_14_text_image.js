@@ -32,6 +32,14 @@ function applyTextProps(textNode, props) {
     // ShaderMask gradient → 텍스트에 gradient fill 적용
     var g = props.gradient;
     var gColors = g.colors || [];
+    if (!Array.isArray(gColors) || gColors.length === 0) {
+      // Empty gradient → fallback to solid color (handled below)
+      props.gradient = null;
+    }
+  }
+  if (props.gradient) {
+    var g = props.gradient;
+    var gColors = g.colors || [];
     var gStops = g.stops || [];
     var gradientStops = [];
     for (var gi = 0; gi < gColors.length; gi++) {

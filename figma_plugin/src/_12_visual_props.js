@@ -34,10 +34,14 @@ function applyVisualProps(frame, props) {
       opacity: bc.a,
     }];
     if (props.borderTopWidth != null) {
-      frame.strokeTopWeight = props.borderTopWidth;
-      frame.strokeRightWeight = props.borderRightWidth;
-      frame.strokeBottomWeight = props.borderBottomWidth;
-      frame.strokeLeftWeight = props.borderLeftWidth;
+      frame.strokeTopWeight =
+        typeof props.borderTopWidth === "number" ? props.borderTopWidth : 0;
+      frame.strokeRightWeight =
+        typeof props.borderRightWidth === "number" ? props.borderRightWidth : 0;
+      frame.strokeBottomWeight =
+        typeof props.borderBottomWidth === "number" ? props.borderBottomWidth : 0;
+      frame.strokeLeftWeight =
+        typeof props.borderLeftWidth === "number" ? props.borderLeftWidth : 0;
     } else {
       frame.strokeWeight = typeof props.borderWidth === "number" ? props.borderWidth : 1;
     }
@@ -112,6 +116,21 @@ function applyGradient(frame, props) {
   var colors = g.colors || [];
   var stops = g.stops || [];
 
+  if (!Array.isArray(colors) || colors.length === 0) {
+    applyBgColor(frame, props);
+    return;
+  }
+
+  if (colors.length === 1) {
+    var single = parseFlutterColor(colors[0]);
+    frame.fills = [{
+      type: "SOLID",
+      color: { r: single.r, g: single.g, b: single.b },
+      opacity: single.a,
+    }];
+    return;
+  }
+
   var gradientStops = [];
   for (var i = 0; i < colors.length; i++) {
     var c = parseFlutterColor(colors[i]);
@@ -143,6 +162,9 @@ function applyGradient(frame, props) {
     var cx = g.center ? g.center.x : 0.5;
     var cy = g.center ? g.center.y : 0.5;
     fill.gradientTransform = buildSweepGradientTransform(cx, cy);
+  } else {
+    fill.type = "GRADIENT_LINEAR";
+    fill.gradientTransform = buildLinearGradientTransform(0.5, 0, 0.5, 1);
   }
 
   frame.fills = [fill];
@@ -178,11 +200,17 @@ function buildLinearGradientTransform(bx, by, ex, ey) {
 // gradient 공간에서 원의 중심은 (0.5, 0.5), 반지름은 0.5
 // Flutter RadialGradient.radius는 shortest side의 비율
 function buildRadialGradientTransform(cx, cy, r, frameW, frameH) {
+  // Clamp dimensions and radius to avoid division by zero → Infinity
+  frameW = Math.max(frameW, 1);
+  frameH = Math.max(frameH, 1);
   var minDim = Math.min(frameW, frameH);
   var radiusPx = r * minDim;
   // 각 축의 normalized radius (element [0,1] 공간)
   var rx = radiusPx / frameW;
   var ry = radiusPx / frameH;
+  // Clamp to avoid Infinity when radius=0
+  rx = Math.max(rx, 0.001);
+  ry = Math.max(ry, 0.001);
   // gradient 반지름 0.5 → element 반지름 rx,ry 로 매핑
   var sx = 1 / (2 * rx);
   var sy = 1 / (2 * ry);
