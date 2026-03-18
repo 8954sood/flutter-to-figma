@@ -99,6 +99,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -518,6 +521,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -629,6 +635,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -846,6 +855,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -1070,6 +1082,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -1400,6 +1415,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -1730,6 +1748,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -2237,6 +2258,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#ff1a1a2e",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -2635,6 +2659,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -3054,6 +3081,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -3165,6 +3195,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -3382,6 +3415,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -3606,6 +3642,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -3936,6 +3975,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#fffef7ff",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [
@@ -4443,6 +4485,9 @@
                       },
                       "visual": {
                         "backgroundColor": "#ff1a1a2e",
+                        "shadow": {
+                          "elevation": 2.2890418767929077
+                        },
                         "borderRadius": 0.0
                       },
                       "children": [

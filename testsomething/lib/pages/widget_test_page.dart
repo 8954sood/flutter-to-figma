@@ -48,7 +48,8 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
               const SizedBox(height: 8),
               const Text(
                 'Opacity · ClipOval · Card · FittedBox · Radio · RangeSlider · AspectRatio · RotatedBox\n'
-                'Gradient · ClipRRect · Transform · Stack · Expanded · Wrap · BoxShadow\n'
+                'Gradient (Linear/Radial/Sweep/Diagonal/Multi-stop/ShaderMask Text)\n'
+                'ClipRRect · Transform · Stack · Expanded · Wrap · BoxShadow\n'
                 'PhysicalModel · BackdropFilter · TextField · Checkbox · Switch · Slider\n'
                 'Chips · Progress · Divider · ColoredBox · Border · RichText · ListTile · Icon',
                 style: TextStyle(fontSize: 14, color: Color(0xFF888888)),
@@ -851,6 +852,7 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
       children: [
         _sectionTitle('Gradient'),
         const SizedBox(height: 12),
+        // Row 1: Background gradients (Linear / Radial / Sweep)
         Row(
           children: [
             Container(
@@ -915,6 +917,236 @@ class _WidgetTestPageState extends State<WidgetTestPage> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 16),
+        // Row 2: Diagonal + multi-stop + vertical background gradients
+        Row(
+          children: [
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                ),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                'Diagonal',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFFFF6B6B),
+                    Color(0xFFFFE66D),
+                    Color(0xFF00BFA6),
+                  ],
+                  stops: [0.0, 0.4, 1.0],
+                ),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                '3-Stop',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF1A1A2E),
+                    Color(0xFF16213E),
+                    Color(0xFF0F3460),
+                  ],
+                ),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                'Vertical',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // Row 3: Text gradients (ShaderMask)
+        const Text(
+          'Text Gradients',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF666666),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Horizontal text gradient
+        ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            colors: [Color(0xFFFF6B6B), Color(0xFF556270)],
+          ).createShader(bounds),
+          child: const Text(
+            'Horizontal Gradient',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Vertical text gradient
+        ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.white, Color(0xFF38EF7D)],
+          ).createShader(bounds),
+          child: const Text(
+            'Vertical Gradient',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Diagonal text gradient
+        ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF667EEA), Color(0xFFFF6B6B)],
+          ).createShader(bounds),
+          child: const Text(
+            'Diagonal Gradient',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Multi-color text gradient
+        ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            colors: [
+              Color(0xFFFF6B6B),
+              Color(0xFFFFE66D),
+              Color(0xFF00BFA6),
+              Color(0xFF6C63FF),
+            ],
+            stops: [0.0, 0.33, 0.66, 1.0],
+          ).createShader(bounds),
+          child: const Text(
+            'Rainbow Text',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Radial text gradient
+        ShaderMask(
+          shaderCallback: (bounds) => const RadialGradient(
+            colors: [Color(0xFFFFE66D), Color(0xFFFF6B6B)],
+            center: Alignment.center,
+            radius: 0.8,
+          ).createShader(bounds),
+          child: const Text(
+            'Radial Text',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Sweep text gradient
+        ShaderMask(
+          shaderCallback: (bounds) => const SweepGradient(
+            colors: [
+              Color(0xFF6C63FF),
+              Color(0xFF00BFA6),
+              Color(0xFFFF6B6B),
+              Color(0xFF6C63FF),
+            ],
+            center: Alignment.center,
+          ).createShader(bounds),
+          child: const Text(
+            'Sweep Text',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Large radial text (bigger area for radial detection)
+        ShaderMask(
+          shaderCallback: (bounds) => const RadialGradient(
+            colors: [Colors.white, Color(0xFF1A1A2E)],
+            center: Alignment.center,
+            radius: 1.0,
+          ).createShader(bounds),
+          child: const Text(
+            'Big Radial',
+            style: TextStyle(
+              fontSize: 48,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Reverse diagonal text gradient (TR → BL)
+        ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            begin: Alignment.topRight,
+            end: Alignment.bottomLeft,
+            colors: [Color(0xFFFFD700), Color(0xFFFF6B6B)],
+          ).createShader(bounds),
+          child: const Text(
+            'Reverse Diagonal',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
         ),
       ],
     );

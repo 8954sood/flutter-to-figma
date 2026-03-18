@@ -82,7 +82,9 @@ void _markCaptureRecursive(RenderObject ro) {
 }
 
 /// RenderShaderMask의 public shaderCallback getter를 dynamic dispatch로 접근,
-/// 사각형에 shader를 직접 칠한 뒤 픽셀 샘플링으로 gradient 추출
+/// 사각형에 shader를 직접 칠한 뒤 픽셀 샘플링으로 gradient 추출.
+/// 256px 해상도, 전체 축 스캔 + 색상 변화점 기반 stop 추출,
+/// 4방향(H/V/대각선) + radial/sweep 판별 지원.
 Future<void> _extractShaderMaskGradients(RenderObject root) async {
   final List<RenderBox> nodes = [];
   void find(RenderObject ro) {
@@ -102,16 +104,14 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
       final h = node.size.height;
       if (w <= 0 || h <= 0) continue;
 
-      // dynamic dispatch로 shaderCallback 접근
       final dynamic dynNode = node;
       final Function callback = dynNode.shaderCallback as Function;
       final rect = Offset.zero & Size(w, h);
       final shader = callback(rect) as ui.Shader;
-      debugPrint('[ShaderMask] got shader from callback, size=${w}x${h}');
 
-      // 사각형 전체를 shader로 칠해서 캡처 (텍스트 형태가 아닌 full rect)
-      final sw = w.ceil().clamp(4, 64);
-      final sh = h.ceil().clamp(4, 64);
+      // 고해상도 캔버스 (최대 256px)
+      final sw = w.ceil().clamp(4, 256);
+      final sh = h.ceil().clamp(4, 256);
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
       canvas.drawRect(
@@ -124,10 +124,7 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
         format: ui.ImageByteFormat.rawRgba,
       );
       image.dispose();
-      if (byteData == null) {
-        debugPrint('[ShaderMask] byteData null');
-        continue;
-      }
+      if (byteData == null) continue;
 
       Color getPixel(int x, int y) {
         x = x.clamp(0, sw - 1);
@@ -147,55 +144,274 @@ Future<void> _extractShaderMaskGradients(RenderObject root) async {
                   (a.blue - b.blue).abs())
               .toDouble();
 
-      // 방향 판별
-      const n = 6;
-      double hVar = 0, vVar = 0;
-      for (int i = 1; i < n; i++) {
-        hVar += colorDist(
-          getPixel(((i - 1) * (sw - 1) ~/ (n - 1)), sh ~/ 2),
-          getPixel((i * (sw - 1) ~/ (n - 1)), sh ~/ 2),
+      // 축별 색상 라인 샘플링 (전체 축 스캔)
+      List<Color> sampleLine(
+        int Function(int i) xFn,
+        int Function(int i) yFn,
+        int count,
+      ) {
+        final result = <Color>[];
+        for (int i = 0; i < count; i++) {
+          result.add(getPixel(xFn(i), yFn(i)));
+        }
+        return result;
+      }
+
+      double lineVariance(List<Color> line) {
+        double v = 0;
+        for (int i = 1; i < line.length; i++) {
+          v += colorDist(line[i - 1], line[i]);
+        }
+        return v;
+      }
+
+      // 4방향 분산 측정: H, V, 대각선(\), 대각선(/)
+      final hLine = sampleLine((i) => i, (i) => sh ~/ 2, sw); // horizontal mid
+      final vLine = sampleLine((i) => sw ~/ 2, (i) => i, sh); // vertical mid
+      final dim = sw < sh ? sw : sh;
+      final d1Line = sampleLine(
+        (i) => (i * (sw - 1)) ~/ (dim - 1),
+        (i) => (i * (sh - 1)) ~/ (dim - 1),
+        dim,
+      ); // top-left → bottom-right
+      final d2Line = sampleLine(
+        (i) => ((dim - 1 - i) * (sw - 1)) ~/ (dim - 1),
+        (i) => (i * (sh - 1)) ~/ (dim - 1),
+        dim,
+      ); // top-right → bottom-left
+
+      final hVar = lineVariance(hLine);
+      final vVar = lineVariance(vLine);
+      final d1Var = lineVariance(d1Line);
+      final d2Var = lineVariance(d2Line);
+
+      // Gradient 타입 판별: 분산 대칭성 기반
+      // - Linear: 한 방향 분산이 압도적 (수직 방향 분산은 낮음)
+      // - Radial: 모든 방향 분산이 비슷 + 같은 반지름 대칭 색 일치
+      // - Sweep: 각도별 색 변화 + 반지름 방향 변화 없음
+      final maxLinearVar = [hVar, vVar, d1Var, d2Var].reduce(math.max);
+      final minLinearVar = [hVar, vVar, d1Var, d2Var].reduce(math.min);
+
+      bool isRadial = false;
+      bool isSweep = false;
+
+      // 분산 대칭 비율: 1.0에 가까우면 모든 방향 비슷 (radial), 0에 가까우면 한 방향만 높음 (linear)
+      final symmetryRatio = maxLinearVar > 0
+          ? minLinearVar / maxLinearVar
+          : 0.0;
+
+      final cx = sw ~/ 2;
+      final cy = sh ~/ 2;
+
+      // Radial 검사: 대칭 비율 높고 + 같은 반지름 대칭점 색 일치
+      // + 중심 색이 모서리 색과 다름 (방사형 확인)
+      if (symmetryRatio > 0.4 && maxLinearVar > 30) {
+        final ringLR = colorDist(
+          getPixel(sw ~/ 4, cy),
+          getPixel(3 * sw ~/ 4, cy),
         );
-        vVar += colorDist(
-          getPixel(sw ~/ 2, ((i - 1) * (sh - 1) ~/ (n - 1))),
-          getPixel(sw ~/ 2, (i * (sh - 1) ~/ (n - 1))),
+        final ringTB = colorDist(
+          getPixel(cx, sh ~/ 4),
+          getPixel(cx, 3 * sh ~/ 4),
+        );
+        final ringSymmetry = ringLR + ringTB;
+        // 중심과 모서리 색 차이 (radial이면 커야 함)
+        final centerColor = getPixel(cx, cy);
+        final cornerDist =
+            (colorDist(centerColor, getPixel(0, 0)) +
+                colorDist(centerColor, getPixel(sw - 1, 0)) +
+                colorDist(centerColor, getPixel(0, sh - 1)) +
+                colorDist(centerColor, getPixel(sw - 1, sh - 1))) /
+            4;
+        isRadial = ringSymmetry < 40 && cornerDist > 30;
+      }
+
+      // Sweep 검사: 원형 샘플링으로 각도별 분산 vs 반지름 분산 비교
+      // symmetryRatio > 0.5: 모든 방향 분산 비슷할 때만 (linear는 한 방향만 높아서 ratio 낮음)
+      if (!isRadial && maxLinearVar > 30 && symmetryRatio > 0.5) {
+        // 반지름 방향 분산 (중심→오른쪽)
+        final radLine = sampleLine(
+          (i) => cx + (i * (sw ~/ 2)) ~/ dim,
+          (i) => cy,
+          dim,
+        );
+        final radVar = lineVariance(radLine);
+
+        // 각도별 분산: 원형 8포인트 샘플링
+        final r = (sw < sh ? sw : sh) * 0.3;
+        final angularColors = <Color>[];
+        for (int ai = 0; ai < 8; ai++) {
+          final angle = 2 * math.pi * ai / 8;
+          final px = (cx + r * math.cos(angle)).round().clamp(0, sw - 1);
+          final py = (cy + r * math.sin(angle)).round().clamp(0, sh - 1);
+          angularColors.add(getPixel(px, py));
+        }
+        double angularVar = 0;
+        for (int ai = 1; ai < angularColors.length; ai++) {
+          angularVar += colorDist(angularColors[ai - 1], angularColors[ai]);
+        }
+        angularVar += colorDist(angularColors.last, angularColors.first);
+
+        // Sweep: 각도별 분산 높고, 반지름 분산은 각도별의 30% 미만
+        isSweep = angularVar > 100 && radVar < angularVar * 0.3;
+      }
+
+      String gradType;
+      List<Color> bestLine;
+      double beginX, beginY, endX, endY;
+
+      final gcx = sw ~/ 2;
+      final gcy = sh ~/ 2;
+
+      if (isRadial) {
+        gradType = 'radial';
+        bestLine = sampleLine(
+          (i) => gcx + (i * (sw ~/ 2)) ~/ dim,
+          (i) => gcy,
+          dim,
+        );
+        beginX = 0.5;
+        beginY = 0.5;
+        endX = 1.0;
+        endY = 0.5;
+      } else if (isSweep) {
+        gradType = 'sweep';
+        final sweepCount = 128;
+        final sweepLine = <Color>[];
+        // 각도별로 가용 반지름을 최대한 활용 (타원형 샘플링)
+        final rx = (sw ~/ 2) * 0.85; // 가로 반지름
+        final ry = (sh ~/ 2) * 0.85; // 세로 반지름
+        for (int i = 0; i < sweepCount; i++) {
+          final angle = 2 * math.pi * i / sweepCount;
+          final px = (gcx + rx * math.cos(angle)).round();
+          final py = (gcy + ry * math.sin(angle)).round();
+          sweepLine.add(getPixel(px.clamp(0, sw - 1), py.clamp(0, sh - 1)));
+        }
+        bestLine = sweepLine;
+        beginX = 0.5;
+        beginY = 0.5;
+        endX = 0.5;
+        endY = 0.5;
+      } else {
+        // Linear: 최대 분산 방향 선택
+        // 축 정렬(H/V)과 대각선 분산이 비슷하면(10% 이내) 축 정렬 우선
+        final axisMax = math.max(hVar, vVar);
+        final diagMax = math.max(d1Var, d2Var);
+        int best;
+        if (axisMax >= diagMax * 0.9) {
+          best = hVar >= vVar ? 0 : 1;
+        } else {
+          best = d1Var >= d2Var ? 2 : 3;
+        }
+        switch (best) {
+          case 0: // horizontal
+            bestLine = hLine;
+            beginX = 0.0;
+            beginY = 0.5;
+            endX = 1.0;
+            endY = 0.5;
+            break;
+          case 1: // vertical
+            bestLine = vLine;
+            beginX = 0.5;
+            beginY = 0.0;
+            endX = 0.5;
+            endY = 1.0;
+            break;
+          case 2: // diagonal TL→BR
+            bestLine = d1Line;
+            beginX = 0.0;
+            beginY = 0.0;
+            endX = 1.0;
+            endY = 1.0;
+            break;
+          default: // diagonal TR→BL
+            bestLine = d2Line;
+            beginX = 1.0;
+            beginY = 0.0;
+            endX = 0.0;
+            endY = 1.0;
+            break;
+        }
+        gradType = 'linear';
+      }
+
+      // 최대 편차 기반 stop 추출 (Ramer-Douglas-Peucker 방식)
+      // 선형 보간과 실제 색의 차이가 가장 큰 지점을 반복적으로 stop에 추가
+      final len = bestLine.length;
+
+      Color lerpColor(Color a, Color b, double t) {
+        return Color.fromARGB(
+          (a.alpha + (b.alpha - a.alpha) * t).round().clamp(0, 255),
+          (a.red + (b.red - a.red) * t).round().clamp(0, 255),
+          (a.green + (b.green - a.green) * t).round().clamp(0, 255),
+          (a.blue + (b.blue - a.blue) * t).round().clamp(0, 255),
         );
       }
-      final bool isVert = vVar >= hVar;
-      debugPrint('[ShaderMask] hVar=$hVar vVar=$vVar isVert=$isVert');
 
-      // 색상 샘플링
-      const sc = 10;
+      // 초기: 첫 + 마지막
+      final stopIndices = <int>[0, len - 1];
+
+      // 반복: 최대 편차 지점 추가 (최대 8개 stop까지)
+      const maxStops = 8;
+      const deviationThreshold = 20.0;
+      while (stopIndices.length < maxStops) {
+        double maxDev = 0;
+        int maxIdx = -1;
+
+        // 인접 stop 쌍 사이에서 최대 편차 찾기
+        for (int s = 0; s < stopIndices.length - 1; s++) {
+          final si = stopIndices[s];
+          final ei = stopIndices[s + 1];
+          if (ei - si <= 1) continue;
+
+          final startColor = bestLine[si];
+          final endColor = bestLine[ei];
+
+          for (int i = si + 1; i < ei; i++) {
+            final t = (i - si) / (ei - si);
+            final expected = lerpColor(startColor, endColor, t);
+            final dev = colorDist(bestLine[i], expected);
+            if (dev > maxDev) {
+              maxDev = dev;
+              maxIdx = i;
+            }
+          }
+        }
+
+        if (maxDev < deviationThreshold || maxIdx < 0) break;
+
+        stopIndices.add(maxIdx);
+        stopIndices.sort();
+      }
+
       final colors = <String>[];
       final stops = <double>[];
-      for (int i = 0; i < sc; i++) {
-        final t = i / (sc - 1);
-        final c = isVert
-            ? getPixel(sw ~/ 2, (t * (sh - 1)).round())
-            : getPixel((t * (sw - 1)).round(), sh ~/ 2);
-        colors.add(_colorToHex(c)!);
-        stops.add(t);
+      for (final idx in stopIndices) {
+        colors.add(_colorToHex(bestLine[idx])!);
+        stops.add(idx / (len - 1));
       }
-
-      // 간소화: 연속 중복 제거
-      final sC = <String>[colors.first];
-      final sS = <double>[stops.first];
-      for (int i = 1; i < colors.length - 1; i++) {
-        if (colors[i] != colors[i - 1] || colors[i] != colors[i + 1]) {
-          sC.add(colors[i]);
-          sS.add(stops[i]);
-        }
-      }
-      sC.add(colors.last);
-      sS.add(stops.last);
 
       final gradient = <String, dynamic>{
-        'type': 'linear',
-        'colors': sC,
-        'stops': sS,
-        'begin': {'x': isVert ? 0.5 : 0.0, 'y': isVert ? 0.0 : 0.5},
-        'end': {'x': isVert ? 0.5 : 1.0, 'y': isVert ? 1.0 : 0.5},
+        'type': gradType,
+        'colors': colors,
+        'stops': stops,
       };
-      debugPrint('[ShaderMask] gradient colors: $sC');
+
+      if (gradType == 'radial') {
+        gradient['center'] = {'x': 0.5, 'y': 0.5};
+        gradient['radius'] = 0.5;
+      } else if (gradType == 'sweep') {
+        gradient['center'] = {'x': 0.5, 'y': 0.5};
+      } else {
+        gradient['begin'] = {'x': beginX, 'y': beginY};
+        gradient['end'] = {'x': endX, 'y': endY};
+      }
+
+      debugPrint(
+        '[ShaderMask] type=$gradType colors=${colors.length} '
+        'hVar=$hVar vVar=$vVar d1=$d1Var d2=$d2Var isRadial=$isRadial isSweep=$isSweep',
+      );
 
       void mapAll(RenderObject obj) {
         _shaderMaskGradients[obj] = gradient;

@@ -41,6 +41,11 @@ function applyTextProps(textNode, props) {
     var g = props.gradient;
     var gColors = g.colors || [];
     var gStops = g.stops || [];
+    // Single color → solid fill (Figma requires ≥2 gradient stops)
+    if (gColors.length === 1) {
+      var sc = parseFlutterColor(gColors[0]);
+      textNode.fills = [{ type: "SOLID", color: { r: sc.r, g: sc.g, b: sc.b }, opacity: sc.a }];
+    } else if (gColors.length >= 2) {
     var gradientStops = [];
     for (var gi = 0; gi < gColors.length; gi++) {
       var gc = parseFlutterColor(gColors[gi]);
@@ -49,13 +54,32 @@ function applyTextProps(textNode, props) {
         color: { r: gc.r, g: gc.g, b: gc.b, a: gc.a }
       });
     }
-    var gFill = { type: "GRADIENT_LINEAR", gradientStops: gradientStops };
-    var gbx = g.begin ? g.begin.x : 0.5;
-    var gby = g.begin ? g.begin.y : 0;
-    var gex = g.end ? g.end.x : 0.5;
-    var gey = g.end ? g.end.y : 1;
-    gFill.gradientTransform = buildLinearGradientTransform(gbx, gby, gex, gey);
+    var gType = (g.type || "linear").toLowerCase();
+    var gFill = { gradientStops: gradientStops };
+
+    if (gType === "radial") {
+      gFill.type = "GRADIENT_RADIAL";
+      var cx = g.center ? g.center.x : 0.5;
+      var cy = g.center ? g.center.y : 0.5;
+      var radius = (g.radius != null) ? g.radius : 0.5;
+      var rfw = (typeof textNode.width === "number" && textNode.width > 0) ? textNode.width : 1;
+      var rfh = (typeof textNode.height === "number" && textNode.height > 0) ? textNode.height : 1;
+      gFill.gradientTransform = buildRadialGradientTransform(cx, cy, radius, rfw, rfh);
+    } else if (gType === "sweep") {
+      gFill.type = "GRADIENT_ANGULAR";
+      var scx = g.center ? g.center.x : 0.5;
+      var scy = g.center ? g.center.y : 0.5;
+      gFill.gradientTransform = buildSweepGradientTransform(scx, scy);
+    } else {
+      gFill.type = "GRADIENT_LINEAR";
+      var gbx = g.begin ? g.begin.x : 0.5;
+      var gby = g.begin ? g.begin.y : 0;
+      var gex = g.end ? g.end.x : 0.5;
+      var gey = g.end ? g.end.y : 1;
+      gFill.gradientTransform = buildLinearGradientTransform(gbx, gby, gex, gey);
+    }
     textNode.fills = [gFill];
+    } // end gColors.length >= 2
   } else if (props.color) {
     var c = parseFlutterColor(props.color);
     textNode.fills = [{
