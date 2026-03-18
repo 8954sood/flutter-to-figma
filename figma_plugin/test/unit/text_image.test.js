@@ -215,8 +215,10 @@ module.exports = [
           end: { x: 1, y: 0 }
         }
       });
-      // Single color gradient — should still produce a fill
+      // Single color gradient → solid fill fallback (Figma requires ≥2 gradient stops)
       assert.strictEqual(textNode.fills.length, 1);
+      assert.strictEqual(textNode.fills[0].type, "SOLID",
+        "single color gradient should fallback to SOLID fill");
     }
   },
   {

@@ -105,7 +105,7 @@ void _markCaptureRecursive(RenderObject ro) {
 /// RenderShaderMask의 public shaderCallback getter를 dynamic dispatch로 접근,
 /// 사각형에 shader를 직접 칠한 뒤 픽셀 샘플링으로 gradient 추출.
 /// 256px 해상도, 전체 축 스캔 + 색상 변화점 기반 stop 추출,
-/// 4방향(H/V/대각선) + radial 판별 지원.
+/// 4방향(H/V/대각선) + radial/sweep 판별 지원.
 Future<void> _extractShaderMaskGradients(RenderObject root) async {
   final List<RenderBox> nodes = [];
   void find(RenderObject ro) {
